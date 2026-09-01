@@ -1,0 +1,4 @@
+# cmd.exe mis-parses LF-only batch files (label/return offsets get corrupted,
+# causing phantom :fail execution after exit /b). Force CRLF for all batch files.
+*.bat text eol=crlf
+*.cmd text eol=crlf

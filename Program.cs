@@ -1,3 +1,4 @@
+using System.Security.Cryptography.X509Certificates;
 using VoiceTableAssist.Asr;
 using VoiceTableAssist.Endpoints;
 using VoiceTableAssist.Infrastructure;
@@ -8,17 +9,40 @@ using VoiceTableAssist.Services;
 // 本地开发可把覆盖项写进 app/.env（或 .env）；正式部署推荐 appsettings.json 或系统环境变量。
 DotEnv.Load();
 
-var builder = WebApplication.CreateBuilder(args);
-
-// 内容根固定为可执行文件目录：appsettings.json / wwwroot 不随"工作目录"漂移，
+// 内容根固定为可执行文件目录：appsettings.json / wwwroot / certs 不随"工作目录"漂移，
 // 无论前台、Windows 服务、systemd 还是从别处启动都能正确加载。
-builder.Host.UseContentRoot(AppContext.BaseDirectory);
+// 必须通过 CreateBuilder 初始参数设定：builder 创建后再改 Host 配置会抛 NotSupportedException。
+var builder = WebApplication.CreateBuilder(new WebApplicationOptions
+{
+    Args = args,
+    ContentRootPath = AppContext.BaseDirectory,
+});
 
 // 服务托管：Windows 注册为服务（sc.exe / nssm）；Linux 走 systemd（前台运行行为不变）。
 if (OperatingSystem.IsWindows())
     builder.Host.UseWindowsService(options => options.ServiceName = "VoiceTableAssist");
 else if (OperatingSystem.IsLinux())
     builder.Host.UseSystemd();
+
+// ---- HTTPS：平板浏览器直访入口（替代 Cordova 壳的推荐方式）----
+// certs/gateway.pfx 存在时（make-cert.bat 生成，私钥密码见下）追加 https://0.0.0.0:15433。
+// https 页面属于安全上下文，getUserMedia（麦克风）直接可用；前端零改动
+// （voice-mic.js 按 location.protocol 自适应 ws/wss，请求均为相对路径）。
+// 内网自签证书：密码写死即可，不构成公网暴露面；IP 变更后重跑 make-cert.bat 重签。
+const string HttpsCertPassword = "vta-local-2026";
+var certPfxPath = Path.Combine(AppContext.BaseDirectory, "certs", "gateway.pfx");
+if (File.Exists(certPfxPath))
+{
+    var httpUrls = builder.Configuration["Urls"] ?? "http://0.0.0.0:15232";
+    builder.WebHost.UseUrls(httpUrls, "https://0.0.0.0:15433");
+    builder.WebHost.ConfigureKestrel(o => o.ConfigureHttpsDefaults(h =>
+        h.ServerCertificate = new X509Certificate2(certPfxPath, HttpsCertPassword)));
+    Console.WriteLine("[HTTPS] certs/gateway.pfx 已加载 -> https://0.0.0.0:15433 （平板：安装 certs/ca.crt 后直访）");
+}
+else
+{
+    Console.WriteLine("[HTTPS] 未找到 certs/gateway.pfx，仅 HTTP。平板浏览器需麦克风时先运行 make-cert.bat。");
+}
 
 // 自动管理 sherpa-onnx 进程生命周期：注册具体类型供 EngineHost 按需启停（懒加载），
 // 同时挂 IHostedService 兜底退出清理。

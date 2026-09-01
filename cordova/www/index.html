@@ -518,6 +518,12 @@ function onSwitchTable() {
 }
 
 loadBase()
+// 防误用：直接双击 index.html 会用 file:// 打开（origin=null），fetch 走 file:// 被 CORS 拦截，
+// 报 net::ERR_FAILED / Unsafe attempt to load URL。正确用法：先启动服务，再用 http://<网关IP>:15232/ 访问。
+if (location.protocol === 'file:') {
+  $('live').textContent = '⚠ 不要直接双击打开本 HTML 文件。请先运行 install.bat（或 VoiceTableAssist.exe）启动服务，再用浏览器访问 http://<网关IP>:15232/'
+  log('检测到 file:// 协议：页面连不上网关。请通过 http://127.0.0.1:15232/ 访问', 'e')
+}
 $('tableSel').innerHTML = TABLES.map(t => `<option value="${t.name}">${t.name}</option>`).join('')
 renderGrid()
 pollHealth()

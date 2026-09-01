@@ -12,5 +12,8 @@ publish/
 # 本地环境变量（含密钥）
 .env
 
+# 本地 HTTPS 证书（自签、绑定 IP；用 make-cert.bat 重新生成，私钥不入库）
+certs/
+
 # 日志
 *.log

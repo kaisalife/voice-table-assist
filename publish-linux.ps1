@@ -1,4 +1,4 @@
-﻿# 打包发布 Linux：(self-contained linux-x64) + 模型 + Linux sherpa-onnx + wwwroot，打一个 zip。
+# 打包发布 Linux：(self-contained linux-x64) + 模型 + Linux sherpa-onnx + wwwroot，打一个 zip。
 #
 # 前置：Windows 上装有 .NET 8 SDK 且能对 linux-x64 交叉发布；
 #       另需准备 Linux 版 sherpa-onnx（官方 release 的 sherpa-onnx-vX-linux-x64.tar.bz2)，
@@ -62,6 +62,16 @@ Copy-Item -Recurse -Force (Join-Path $project 'selftest') (Join-Path $outDir 'se
 # 附带安卓 Cordova 壳模板（config.xml + package.json + build.ps1 + 已同步的 www/）
 if (Test-Path (Join-Path $project 'cordova')) {
     Copy-Item -Recurse -Force (Join-Path $project 'cordova') (Join-Path $outDir 'cordova')
+}
+
+# 附带 HTTPS 证书（可选）：存在即启用平板浏览器直访的 https://15433。
+# make-cert.bat 生成 certs/{ca.crt,gateway.pfx}；私钥不进 git，打包机生成后随包分发。
+$certsSrc = Join-Path $project 'certs'
+if (Test-Path (Join-Path $certsSrc 'gateway.pfx')) {
+    Copy-Item -Recurse -Force $certsSrc (Join-Path $outDir 'certs')
+    Write-Host '==> 已附带 certs/（HTTPS 平板直访已启用）'
+} else {
+    Write-Warning '未找到 certs\gateway.pfx - HTTPS 已禁用。平板浏览器直访需先运行 make-cert.bat。'
 }
 
 # 附带文档：目标机部署运维直接看包内部署文档，无需回仓库翻

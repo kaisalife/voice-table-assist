@@ -1,4 +1,4 @@
-﻿# 打包发布：self-contained win-x64 + 模型/sherpa hr/wwwroot，打一个 zip。
+﻿﻿# 打包发布：self-contained win-x64 + 模型/sherpa hr/wwwroot，打一个 zip。
 # ASR 模型仅保留 float32 版（识别精度更高）。int8 已从 models/asr 移除。
 # 用法（在 app/VoiceTableAssist 目录）：
 #   powershell -ExecutionPolicy Bypass -File .\publish.ps1
@@ -73,6 +73,16 @@ if (Test-Path $vcRedist) {
 # 附带安卓 Cordova 壳模板（config.xml + package.json + build.ps1 + 已同步的 www/）
 if (Test-Path (Join-Path $project 'cordova')) {
     Copy-Item -Recurse -Force (Join-Path $project 'cordova') (Join-Path $publish 'cordova')
+}
+
+# 附带 HTTPS 证书（可选）：存在即启用平板浏览器直访的 https://15433。
+# make-cert.bat 生成 certs/{ca.crt,gateway.pfx}；私钥不进 git，打包机生成后随包分发。
+$certsSrc = Join-Path $project 'certs'
+if (Test-Path (Join-Path $certsSrc 'gateway.pfx')) {
+    Copy-Item -Recurse -Force $certsSrc (Join-Path $publish 'certs')
+    Write-Host '==> 已附带 certs/（HTTPS 平板直访已启用）'
+} else {
+    Write-Warning '未找到 certs\gateway.pfx - HTTPS 已禁用。平板浏览器直访需先运行 make-cert.bat。'
 }
 
 # 附带文档：目标机部署运维直接看包内部署文档，无需回仓库翻

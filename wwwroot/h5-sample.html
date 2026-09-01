@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>金属监督检验记录（H5 导入验证样例）</title>
+<!--
+  ============================================================================
+  用途：模拟"实际业务场景"的 H5 表格页面，用于验证测试前端（/）的「导入 H5 表格」功能。
+  用法：把本页 <table>…</table> 整段（或整页源码）粘贴到测试前端
+        「导入 H5 表格」面板 → 解析预览 → 导入并验证。
+  表格特征（故意贴近真实页面，验证解析的鲁棒性）：
+    1. 第一行为 th 表头，且第一列是"检验项目"（会被剥离，不占数据列）；
+    2. 数据行第一列 = 行标签（壁厚 / 外径 / 硬度 / 光谱）；
+    3. "壁厚偏差"与"壁厚"含相同子串，可检验向量检索的区分度；
+    4. 空单元格 = 待语音填入的数值位。
+  语音说法：行标签 + X号，如「壁厚一号二点八」→ 返回规范坐标 {row:1,column:1}。
+  ============================================================================
+-->
+<style>
+  body { font-family: "Microsoft YaHei", system-ui, sans-serif; margin: 24px; color: #1f2937; }
+  h1 { font-size: 20px; }
+  p.desc { color: #6b7280; font-size: 14px; }
+  table { border-collapse: collapse; margin-top: 12px; }
+  th, td { border: 1px solid #d1d5db; padding: 10px 16px; text-align: center; min-width: 90px; }
+  th { background: #f3f4f6; }
+  td.item { background: #fafafa; font-weight: 600; }
+</style>
+</head>
+<body>
+  <h1>金属监督检验记录</h1>
+  <p class="desc">机组：1~3 号机 · 单位：mm · 检验人：＿＿＿</p>
+
+  <table id="inspect-table">
+    <tr>
+      <th>检验项目</th>
+      <th>1号机</th>
+      <th>2号机</th>
+      <th>3号机</th>
+    </tr>
+    <tr>
+      <td class="item">壁厚</td>
+      <td></td><td></td><td></td>
+    </tr>
+    <tr>
+      <td class="item">外径</td>
+      <td></td><td></td><td></td>
+    </tr>
+    <tr>
+      <td class="item">硬度</td>
+      <td></td><td></td><td></td>
+    </tr>
+    <tr>
+      <td class="item">光谱</td>
+      <td></td><td></td><td></td>
+    </tr>
+  </table>
+
+  <p class="desc" style="margin-top:16px">
+    本页仅为数据源样例：语音填表请使用网关托管测试前端（<a href="/">返回测试前端</a>），
+    把上面的表格粘贴进「导入 H5 表格」面板即可。
+  </p>
+</body>
+</html>

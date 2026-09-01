@@ -156,18 +156,12 @@ REM left by the port-probe curl above (refused by design when the port is
 REM free) would look like a start failure. The health poll below is the gate.
 set "PROC_RUN=1"
 
-timeout /t 1 /nobreak >NUL
-echo ==^> Capture latest PID via wmic CSV + sort ...
+ping -n 2 127.0.0.1 >NUL
+echo ==^> Capture latest PID via tasklist CSV ...
 set "PID="
-for /f "skip=1 tokens=2 delims=," %%A in (
-    'wmic process where "name='VoiceTableAssist.exe'" get processid^,name /format:csv 2^>NUL ^| sort'
-) do (
-    for /f "tokens=*" %%B in ("%%A") do set "PID=%%B"
-)
-if not defined PID (
-    REM Fallback: tasklist wmic w/o CSV. Last token wins.
-    for /f "tokens=2" %%P in ('tasklist /FI "IMAGENAME eq VoiceTableAssist.exe" /NH 2^>NUL') do set "PID=%%P"
-)
+REM tasklist /FO CSV /NH rows look like: "VoiceTableAssist.exe","1234","Console","1","xx K"
+REM tokens=2 (delims=comma) is the quoted PID; %%~P strips the quotes.
+for /f "tokens=2 delims=," %%P in ('tasklist /FI "IMAGENAME eq VoiceTableAssist.exe" /FO CSV /NH 2^>NUL') do set "PID=%%~P"
 if defined PID ( echo         PID=%PID% ) else ( echo WARN    Could not capture PID; will kill by name only. )
 
 echo ==^> Polling %BASE%/api/health for up to 60s ...
@@ -182,7 +176,7 @@ for /L %%I in (1,1,60) do (
         if defined READY (
             echo         ready after %%I sec.
         ) else (
-            timeout /t 1 /nobreak >NUL
+            ping -n 2 127.0.0.1 >NUL
         )
     )
 )
@@ -217,7 +211,8 @@ if "%SELFTEST%"=="1" (
 REM ===== 7) Keep alive =====
 if defined KEEPALIVE (
     echo ==^> KEEPALIVE %KEEPALIVE%s ...
-    timeout /t %KEEPALIVE% /nobreak >NUL
+    set /a KP=%KEEPALIVE%+1
+    ping -n !KP! 127.0.0.1 >NUL
 ) else (
     echo ==^> Service is running. Press ENTER to stop and cleanup.
     pause >NUL
@@ -233,17 +228,20 @@ echo   /SELFTEST          After ready, run HTTP multi-table self-test.
 echo   /PORT 15232        Override health-check port (default: 15232).
 echo   /KEEPALIVE N       Auto-exit after N seconds (CI / unattended mode).
 echo.
-endlocal & exit /b 0
+endlocal
+exit /b 0
 
 :fail
 echo.
 echo FAIL  deploy-check.bat stopped.
 call :cleanup
-endlocal & exit /b 1
+endlocal
+exit /b 1
 
 :end
 call :cleanup
-endlocal & exit /b 0
+endlocal
+exit /b 0
 
 REM ==========================================================================
 REM Sub: cleanup - kill processes started by THIS run (SIG-file fence),
@@ -254,12 +252,12 @@ if "%PROC_RUN%"=="1" (
     echo ==^> Cleanup: stop VoiceTableAssist.exe and sherpa server ...
     if defined PID (
         taskkill /F /PID %PID% /T >NUL 2>&1
-        timeout /t 1 /nobreak >NUL
+        ping -n 2 127.0.0.1 >NUL
         taskkill /F /PID %PID% /T >NUL 2>&1
     )
     taskkill /F /IM VoiceTableAssist.exe /T >NUL 2>&1
     taskkill /F /IM sherpa-onnx-online-websocket-server.exe /T >NUL 2>&1
-    timeout /t 2 /nobreak >NUL
+    ping -n 3 127.0.0.1 >NUL
     taskkill /F /IM VoiceTableAssist.exe /T >NUL 2>&1
     taskkill /F /IM sherpa-onnx-online-websocket-server.exe /T >NUL 2>&1
 ) else (
@@ -268,23 +266,27 @@ if "%PROC_RUN%"=="1" (
     taskkill /F /IM sherpa-onnx-online-websocket-server.exe /T >NUL 2>&1
 )
 
-if "%SELFTEST%"=="1" (
-    echo ==^> SELFTEST: wipe aggregated tables + truncate hotwords ...
-    if exist "%ROOT%models\embedding\tables" rmdir /S /Q "%ROOT%models\embedding\tables" 2>NUL
-    if defined SHERPA_DIR (
-        if exist "!SHERPA_DIR!\hr\tables" (
-            REM Delete every subdir EXCEPT "current"
-            for /D %%D in ("!SHERPA_DIR!\hr\tables\*") do (
-                if /I not "%%~nxD"=="current" rmdir /S /Q "%%D" 2>NUL
-            )
-            REM Truncate hotwords inside current to zero bytes.
-            if exist "!SHERPA_DIR!\hr\tables\current\hotwords.txt" (
-                break>"!SHERPA_DIR!\hr\tables\current\hotwords.txt"
-            ) else (
-                break>"!SHERPA_DIR!\hr\tables\current\hotwords.txt"
-            )
-        )
-    )
-)
+REM SELFTEST wipe extracted to :wipeTestData - keeps this subroutine free of
+REM deeply nested if/for blocks that trip cmd 5.1's endlocal/exit boundary bug.
+if "%SELFTEST%"=="1" call :wipeTestData
+
 if exist "%SIG%" del /F /Q "%SIG%" 2>NUL
 exit /b
+
+REM ==========================================================================
+REM Sub: wipeTestData - SELFTEST only: wipe aggregated tables + hotwords so the
+REM      next run starts clean. Flat structure on purpose (no deep nesting).
+REM ==========================================================================
+:wipeTestData
+echo ==^> SELFTEST: wipe aggregated tables + truncate hotwords ...
+if exist "%ROOT%models\embedding\tables" rmdir /S /Q "%ROOT%models\embedding\tables" 2>NUL
+if defined SHERPA_DIR (
+    if exist "!SHERPA_DIR!\hr\tables" (
+        for /D %%D in ("!SHERPA_DIR!\hr\tables\*") do (
+            if /I not "%%~nxD"=="current" rmdir /S /Q "%%D" 2>NUL
+        )
+        break>"!SHERPA_DIR!\hr\tables\current\hotwords.txt"
+    )
+)
+exit /b
+

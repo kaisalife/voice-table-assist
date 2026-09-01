@@ -138,6 +138,14 @@ if exist "%PROJECT%cordova" (
     REM Inside Cordova template, keep any scripts for now - separate build.
 )
 
+REM ===== 6b) HTTPS certs (optional - enables tablet access on port 15433) =====
+if exist "%PROJECT%certs\gateway.pfx" (
+    echo ==^> Copy certs/ - HTTPS enabled for tablets.
+    xcopy "%PROJECT%certs" "%PUBLISH%certs\" /E /I /H /Y /Q
+) else (
+    echo WARN    certs\gateway.pfx missing - HTTPS disabled. Run make-cert.bat first.
+)
+
 REM ===== 7) Docs =====
 echo ==^> Copy bundled docs (3 files) ...
 REM Copy bundled docs from the docs folder (3 files: deploy/user/api).
