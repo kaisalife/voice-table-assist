@@ -23,6 +23,9 @@
     <config-file target="AndroidManifest.xml" parent="/manifest"
                  xmlns:android="http://schemas.android.com/apk/res/android">
       <uses-permission android:name="android.permission.RECORD_AUDIO" />
+      <!-- normal 级权限（安装即授，无运行时弹窗）：部分 ROM 上 WebView 启动音频输入
+           需要调整音频路由，缺它会在权限全给时仍抛 NotReadableError -->
+      <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
     </config-file>
 
     <!-- 网关走局域网 http 明文：Android 9+ 默认禁止明文流量，显式放开。
