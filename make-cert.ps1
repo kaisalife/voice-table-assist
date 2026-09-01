@@ -87,6 +87,13 @@ $pfxPath = Join-Path $OutDir 'gateway.pfx'
 $secPwd  = ConvertTo-SecureString -String $PfxPassword -Force -AsPlainText
 Export-PfxCertificate -Cert $leaf -FilePath $pfxPath -Password $secPwd | Out-Null
 
+# 同步一份 ca.crt 到 wwwroot：手机/平板连上 http://<网关IP>:15232/ca.crt 即可直接下载安装。
+$www = Join-Path $PSScriptRoot 'wwwroot'
+if (Test-Path $www) {
+    Copy-Item -Force $caPem (Join-Path $www 'ca.crt')
+    Write-Host '   ca.crt 已同步到 wwwroot/（手机可 http://<网关IP>:15232/ca.crt 直接下载）'
+}
+
 Write-Host ''
 Write-Host '============================================================'
 Write-Host ' DONE. Files written:'
