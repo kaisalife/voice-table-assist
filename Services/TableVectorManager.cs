@@ -100,10 +100,15 @@ internal sealed class TableVectorManager
         var name = tableName.Trim();
 
         var allPhrases = new List<(int Row, int Col, string Phrase)>();
-        foreach (var row in rows)
+        // 规范坐标：行号 = rows 数组顺序 1..N（第一个行标签=1），列号 = 1..columnCount（第一个列标签=1）。
+        // 与前端 UI 的原始坐标完全解耦——前端收到返回后按自身表格布局做固定偏移换算。
+        for (var i = 0; i < rows.Count; i++)
+        {
+            var normRow = i + 1;
             for (var col = 1; col <= columnCount; col++)
-                foreach (var p in CellPhraseGenerator.Generate(row.Index, row.Label, col))
-                    allPhrases.Add((row.Index, col, p));
+                foreach (var p in CellPhraseGenerator.Generate(normRow, rows[i].Label, col))
+                    allPhrases.Add((normRow, col, p));
+        }
 
         // 引擎按需加载（懒加载模式下首次导入时才装载 ONNX 模型）
         _host.EnsureEnginesAsync().GetAwaiter().GetResult();

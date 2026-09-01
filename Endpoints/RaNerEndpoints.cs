@@ -72,7 +72,8 @@ internal static class RaNerEndpoints
 
             var rows = new List<RowDef>();
             foreach (var r in root.GetProperty("rows").EnumerateArray())
-                rows.Add(new RowDef { Label = r.GetProperty("label").GetString()!, Index = r.GetProperty("index").GetInt32() });
+                // index 已弃用：向量库坐标一律按 rows 数组顺序生成，请求里的 index 仅兼容旧客户端
+                rows.Add(new RowDef { Label = r.GetProperty("label").GetString()!, Index = r.TryGetProperty("index", out var ix) ? ix.GetInt32() : 0 });
 
             var columnCount = root.GetProperty("columnCount").GetInt32();
 

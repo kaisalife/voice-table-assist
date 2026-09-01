@@ -55,10 +55,10 @@ app/VoiceTableAssist/
 ├─ VoiceTableAssist.csproj      # Web SDK net8.0，引用 onnxruntime 1.20.1 + WindowsServices
 ├─ Program.cs                   # 入口：装配 + 路由
 ├─ appsettings.json             # 统一配置（端口/ASR/交互编排/sherpa/hr/tables）
-├─ deploy-check.ps1             # 部署效果检查：14 项完整性自检 + 临时拉起服务 + 就绪自检（-Selftest 自测后自动还原干净；关掉脚本即停）
-├─ publish.ps1                  # 打包发布脚本（Windows win-x64，含模型/sherpa/selftest/cordova/文档）
-├─ publish-linux.ps1            # 打包发布脚本（Linux self-contained，需自备 sherpa-linux/）
-├─ selftest/selftest.ps1        # 一体化自测：HTTP 多表热切换 + WS 就绪延迟 + ASR 语音端到端
+├─ deploy-check.bat             # 部署冒烟检查：临时拉起服务 + 就绪自检（/SELFTEST 自测后自动还原干净；关掉脚本即停）
+├─ publish.bat                  # 打包发布脚本（Windows win-x64，含模型/sherpa/selftest/cordova/文档）
+├─ publish-linux.bat            # 打包发布脚本（Linux self-contained，需自备 sherpa-linux/）
+├─ selftest/selftest.bat        # 一体化自测：HTTP 多表热切换 + WS 就绪延迟 + ASR 语音端到端
 ├─ cordova/                     # 安卓 Cordova 壳模板（config.xml + build.ps1，APK 打包见部署文档第五节）
 ├─ Asr/                         # sherpa 进程托管、语音交互编排(VoiceInteractionSession)、同音纠正
 ├─ Infrastructure/              # 配置/DotEnv/WebSocket/文件日志
@@ -70,13 +70,13 @@ app/VoiceTableAssist/
 └─ wwwroot/                     # 两张巡检表测试前端（锅炉巡检/汽机巡检）+ voice-mic.js 采集库
 ```
 
-> 模型与 sherpa 二进制不编入编译产物：`models/`、`sherpa-onnx/` 由 `publish.ps1` 从仓库源拷贝到发布目录。
+> 模型与 sherpa 二进制不编入编译产物：`models/`、`sherpa-onnx/` 由 `publish.bat` 从仓库源拷贝到发布目录。
 > **注意**：GitHub 仓库 <https://github.com/kaisalife/voice-table-assist> **不含 `models/` 目录**。首次克隆后，先在 `app/VoiceTableAssist/` 目录下执行：
 > ```
 > pip install modelscope
 > modelscope download --model yanxiashuiyun/VoiceTableAssist --local_dir .
 > ```
-> 完成后即得到 `app/VoiceTableAssist/models/`，再构建或运行；完整部署包（已含模型）仍由 `publish.ps1` 生成。
+> 完成后即得到 `app/VoiceTableAssist/models/`，再构建或运行；完整部署包（已含模型）仍由 `publish.bat` 生成。
 
 ## 多表数据布局（运行期自动生成）
 
@@ -117,7 +117,7 @@ dotnet build -c Release
 ```powershell
 cd app/VoiceTableAssist
 # 打包前确保已按「本地构建」第 2 步补齐 models/ 目录
-powershell -ExecutionPolicy Bypass -File .\publish.ps1            # ASR 模型仅 float32（识别精度更高）
+publish.bat            # ASR 模型仅 float32（识别精度更高）
 ```
 
 产出：`app\publish\voice-table-assist-win-x64.zip`（不在仓库根），解压后目录布局：
@@ -125,8 +125,8 @@ powershell -ExecutionPolicy Bypass -File .\publish.ps1            # ASR 模型�
 ```
 VoiceTableAssist.exe
 appsettings.json
-deploy-check.ps1                 # 临时拉起验证，关掉即停
-selftest/selftest.ps1           # 一体化自测（http/ws/asr 三节，-Only 可选节）
+deploy-check.bat                 # 临时拉起验证，关掉即停
+selftest/selftest.bat           # 一体化自测（http/ws/asr 三节，-Only 可选节）
 models/{raner, embedding, asr}   # ASR 模型已统一并入 models/asr
 sherpa-onnx/{exe, hr/}           # 原生 server + 语音资源（ASR 模型不在其中）
 相关文档/{部署文档, api文档, 用户使用指南}.md
@@ -134,13 +134,13 @@ cordova/                         # 安卓 Cordova 壳模板（config.xml + build
 wwwroot/
 ```
 
-> 注意：含中文的 .ps1 必须是 UTF-8 with BOM，否则 PowerShell 5.1 按 GBK 解析会报语法错误——
-> 详见部署文档"踩坑实录"第 7 条。
+> 注意：部署/打包/自测脚本已全部改为纯批处理(.bat)，脚本源码仅用 ASCII 字符，
+> 彻底避开 PowerShell 5.1 对中文 BOM 的编码坑。
 
 ## 目标机运行（无需 .NET 运行时）
 
 1. 解压到任意目录（例如 `D:\app\voice-table-assist`）。
-2. 推荐 `.\deploy-check.ps1`（临时拉起 + 就绪自检 + 可选 `-Selftest`，关掉脚本即停）；调试可直接 `.\VoiceTableAssist.exe`。
+2. 推荐 `.\deploy-check.bat`（临时拉起 + 就绪自检 + 可选 `/SELFTEST`，关掉脚本即停）；调试可直接 `.\VoiceTableAssist.exe`。
 3. 验证：
    - `GET http://127.0.0.1:15232/api/health` → `configured:true`、`provider:sherpa`、`activeTable`
    - 日志显示 RaNER/embedding 装载完成、sherpa-onnx 就绪（端口 6006）
@@ -160,7 +160,7 @@ wwwroot/
 # 1) 备好 Linux 版 sherpa-onnx：官方 tarball 解包整目录放入 sherpa-linux/
 #    （含 bin/sherpa-onnx-online-websocket-server + models/ + hr/）
 # 2) 交叉发布打包（产物：app\publish\voice-table-assist-linux-x64.zip，含模型/selftest/文档）
-powershell -ExecutionPolicy Bypass -File .\publish-linux.ps1
+publish-linux.bat
 ```
 
 解压到 Linux 后：
@@ -183,8 +183,8 @@ sc.exe start    VoiceTableAssist
 前置：服务已启动（默认端口 15232）。一体化脚本三节按序全跑（`-Only http|ws|asr` 可选节）：
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\selftest\selftest.ps1                # 全部
-powershell -ExecutionPolicy Bypass -File .\selftest\selftest.ps1 -Only http     # 只跑 HTTP 节
+.\selftest\selftest.bat                # 全部
+.\selftest\selftest.bat -Only http     # 只跑 HTTP 节
 ```
 
 - **http**：导入表A(`default` 6×6)与表B(`力学性能` 3×4)，依次带 `table` 名调用 `/text_to_json`、`/api/speech/ner`，用 `/api/health` 的 `activeTable` 校验热切换。

@@ -82,7 +82,7 @@
 <main>
   <!-- 初始化状态 -->
   <div class="panel">
-    <h2>1. 表初始化状态 <small style="color:#71717a">（页面打开时自动逐表检查：未导入的表会自动导入并等待向量库构建完成）</small></h2>
+    <h2>1. 表初始化状态 <small style="color:#71717a">（打开页面自动逐表检查导入；也可在下方选表后点「导入当前表」手动导入）</small></h2>
     <div class="chips" id="chips"></div>
   </div>
 
@@ -94,6 +94,7 @@
       <label>当前表：
         <select id="tableSel" onchange="onSwitchTable()"></select>
       </label>
+      <button class="ghost" id="importBtn" onclick="importCurrentTable()" title="把本页当前表的行/列定义上传到后端并重建向量库">导入当前表</button>
       <button class="primary" id="voiceBtn" disabled onclick="onVoiceButton()">开始语音录入</button>
       <div id="levelWrap" style="display:none;width:90px;height:8px;background:#e4e4e7;border-radius:4px;overflow:hidden" title="麦克风输入电平"><div id="levelBar" style="width:0%;height:100%;background:#22c55e;transition:width .1s"></div></div>
       <span id="voiceHint" class="muted"></span>
@@ -125,11 +126,14 @@
 /* ========================= 两张巡检表定义（参考 test_front 场景） =========================
    rows 为行标签（语音里说「水位」即命中行），大多 2 字、少数 4 字，便于语音识别；
    columnCount 为序号列数（说「一号」「二号」…）。 */
+/* rowOffset/colOffset：后端规范坐标 → 本页 UI 坐标(data-r/data-c) 的固定偏移。
+   后端一律按「第一个行标签=第1行、第一个列标签=第1列」返回坐标，与本页表格布局无关；
+   不同表的偏移可以不一样，单张确定的表固定即可。 */
 const TABLES = [
   { name: '锅炉巡检', rows: ['水位', '汽压', '汽温', '风压', '流量', '给水温度'],
-    columnCount: 4 },
+    columnCount: 4, rowOffset: 0, colOffset: 0 },
   { name: '汽机巡检', rows: ['振动', '油温', '油压', '胀差', '真空', '轴向位移'],
-    columnCount: 4 },
+    columnCount: 4, rowOffset: 0, colOffset: 0 },
 ]
 
 /* ========================= 工具函数 ========================= */
@@ -181,10 +185,23 @@ async function pollHealth() {
 setInterval(pollHealth, 5000)
 
 /* ============ 1. 初始化逻辑：逐个检查表是否已导入，缺失则导入并等待完成 ============ */
-function renderChips(state) {
-  // state: 'checking' | 'busy' | 'ready' | 'error' | undefined(还没轮到)
+/* 每张表的初始化状态：'busy' | 'ready' | 'error' | 'checking' | ''(还没轮到)。
+   提升为全局：手动「导入当前表」按钮也会更新同一份状态。 */
+const tableState = new Array(TABLES.length).fill('')
+
+/* 表导入请求体：行标签 + 序号列数（本页的表定义就是导入数据源） */
+function importTable(t) {
+  return fetchJson(`${base()}/import_table`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ tableName: t.name, rows: t.rows.map((r, k) => ({ label: r, index: k + 1 })),
+                           columnCount: t.columnCount }),
+  })
+}
+
+function renderChips() {
   $('chips').innerHTML = TABLES.map((t, i) => {
-    const s = state[i]
+    const s = tableState[i]
     const cls = s === 'ready' ? 'ok' : s === 'error' ? 'err' : (s === 'busy' || s === 'checking') ? 'busy' : ''
     const txt = s === 'ready' ? '已就绪 ✓' : s === 'busy' ? '处理中…' : s === 'error' ? '失败 ✗'
               : s === 'checking' ? '检查中…' : '等待'
@@ -195,13 +212,12 @@ function renderChips(state) {
 async function initAllTables(isRetry) {
   const btn = $('recheck'); btn.disabled = true
   $('voiceBtn').disabled = true
-  const state = new Array(TABLES.length).fill('') // ''=未开始
-  renderChips(state)
+  renderChips()
   log(isRetry ? '重新执行初始化检查……' : '页面启动，开始逐表初始化检查……')
 
   for (let i = 0; i < TABLES.length; i++) {
     const t = TABLES[i]
-    state[i] = 'busy'; renderChips(state)
+    tableState[i] = 'busy'; renderChips()
 
     try {
       // 第一步：问后端这个表的向量库有没有准备好
@@ -211,12 +227,7 @@ async function initAllTables(isRetry) {
       if (!exists) {
         // 第二步：没有 → 上传该表结构，await 导入完成（服务端构建向量库）
         log(`「${t.name}」后端尚未导入，正在上传并构建向量库（可能需要几秒）……`)
-        await fetchJson(`${base()}/import_table`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ tableName: t.name, rows: t.rows.map((r, k) => ({ label: r, index: k + 1 })),
-                                 columnCount: t.columnCount }),
-        })
+        await importTable(t)
         log(`「${t.name}」导入完成，向量库已就绪`, 's')
       } else {
         // 已存在：向量库复用，但轻量刷新该表的语音资源（热词/纠错规则），
@@ -232,21 +243,42 @@ async function initAllTables(isRetry) {
           log(`「${t.name}」语音资源刷新失败（忽略）: ${e.message}`, 'e')
         }
       }
-      state[i] = 'ready'
+      tableState[i] = 'ready'
     } catch (err) {
-      state[i] = 'error'
-      renderChips(state)
+      tableState[i] = 'error'
+      renderChips()
       log(`「${t.name}」初始化失败：${err.message}`, 'e')
-      log('已中止后续表的初始化，可点右上角"重新检查初始化"重试', 'e')
+      log('已中止后续表的初始化，可点右上角"重新检查初始化"或下方"导入当前表"重试', 'e')
       btn.disabled = false
       return
     }
-    renderChips(state)
+    renderChips()
   }
 
   log(`全部 ${TABLES.length} 张表初始化完成`, 's')
   $('voiceBtn').disabled = false
   $('voiceHint').textContent = ''
+  btn.disabled = false
+}
+
+/* 手动导入当前选中的表：把本页表定义上传给后端并等待向量库构建完成。
+   后端已有该表时会重建/覆盖；初始化自动流程失败时用它兜底重试。 */
+async function importCurrentTable() {
+  if (mic && mic.active) { log('请先结束当前录音再导入表', 'e'); return }
+  const i = TABLES.findIndex(t => t.name === $('tableSel').value)
+  const t = TABLES[i]
+  const btn = $('importBtn')
+  btn.disabled = true
+  tableState[i] = 'busy'; renderChips()
+  log(`手动导入「${t.name}」：上传表结构并构建向量库……`)
+  try {
+    await importTable(t)
+    tableState[i] = 'ready'; renderChips()
+    log(`「${t.name}」导入完成，向量库已就绪`, 's')
+  } catch (err) {
+    tableState[i] = 'error'; renderChips()
+    log(`「${t.name}」导入失败：${err.message}`, 'e')
+  }
   btn.disabled = false
 }
 
@@ -310,10 +342,14 @@ function showAccum(acc) {
 function applyCells(cells, text) {
   const t = currentTable()
   const nR = t.rows.length, nC = t.columnCount
+  const rOff = t.rowOffset || 0, cOff = t.colOffset || 0
   let hit = 0
   for (const c of cells) {
-    const td = document.querySelector(`#grid td[data-r="${c.row}"][data-c="${c.column}"]`)
-    if (!td || c.row < 1 || c.row > nR || c.column < 1 || c.column > nC) continue
+    // 后端返回规范坐标（第一个行标签=第1行、第一个列标签=第1列，与本页 UI 无关）：
+    // 先按规范范围校验，再加本表固定偏移换算成 UI 坐标后查找单元格
+    if (c.row < 1 || c.row > nR || c.column < 1 || c.column > nC) continue
+    const td = document.querySelector(`#grid td[data-r="${c.row + rOff}"][data-c="${c.column + cOff}"]`)
+    if (!td) continue
     td.textContent = c.values
     td.classList.remove('filled'); void td.offsetWidth; td.classList.add('filled') // 重触发动画
     hit++
@@ -379,6 +415,7 @@ function setVoiceUI(state, hintText) {
   light.className = 'light ' + cfg.light
   $('voiceHint').textContent = hintText || ''
   $('tableSel').disabled = state === 'recording'
+  $('importBtn').disabled = state === 'recording'
 }
 
 function resetVoice() {
