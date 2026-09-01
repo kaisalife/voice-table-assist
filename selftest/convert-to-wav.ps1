@@ -1,4 +1,4 @@
-# 用 Windows 内置 MediaTranscoder 把任意音频（m4a/mp3/...）转成 16k/16bit/mono PCM wav。
+﻿# 用 Windows 内置 MediaTranscoder 把任意音频（m4a/mp3/...）转成 16k/16bit/mono PCM wav。
 # 不依赖 ffmpeg，适合无法从 GitHub 下载 ffmpeg 的环境。
 # Usage: .\convert-to-wav.ps1 -Source "录音.m4a" [-Output "录音.wav"]
 param(

@@ -1,4 +1,4 @@
-# 打包发布：self-contained win-x64 + 模型/sherpa hr/wwwroot，打一个 zip。
+﻿# 打包发布：self-contained win-x64 + 模型/sherpa hr/wwwroot，打一个 zip。
 # ASR 模型仅保留 float32 版（识别精度更高）。int8 已从 models/asr 移除。
 # 用法（在 app/VoiceTableAssist 目录）：
 #   powershell -ExecutionPolicy Bypass -File .\publish.ps1
