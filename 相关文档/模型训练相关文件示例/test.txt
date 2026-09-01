@@ -1,0 +1,343 @@
+
+输入: 巡检登记，长度，一号，十五点二六
+BIO : 巡/O 检/O 登/O 记/O ，/O 长/B-SUB 度/I-SUB ，/O 一/B-OBJ 号/I-OBJ ，/O 十/B-VAL 五/I-VAL 点/I-VAL 二/I-VAL 六/I-VAL
+  -> 主体: 长度 | 客体: 一号 | 数值: 十五点二六
+
+输入: 宽度一号二十三点四八
+BIO : 宽/B-SUB 度/I-SUB 一/B-OBJ 号/I-OBJ 二/B-VAL 十/I-VAL 三/I-VAL 点/I-VAL 四/I-VAL 八/I-VAL
+  -> 主体: 宽度 | 客体: 一号 | 数值: 二十三点四八
+
+输入: 厚度三号负零点零五
+BIO : 厚/B-SUB 度/I-SUB 三/B-OBJ 号/I-OBJ 负/B-VAL 零/I-VAL 点/I-VAL 零/I-VAL 五/I-VAL
+  -> 主体: 厚度 | 客体: 三号 | 数值: 负零点零五
+
+输入: 巡检登记，温度，一号列，三十六点五
+BIO : 巡/O 检/O 登/O 记/O ，/O 温/B-SUB 度/I-SUB ，/O 一/B-OBJ 号/I-OBJ 列/I-OBJ ，/O 三/B-VAL 十/I-VAL 六/I-VAL 点/I-VAL 五/I-VAL
+  -> 主体: 温度 | 客体: 一号列 | 数值: 三十六点五
+
+输入: 压力二号零点八
+BIO : 压/B-SUB 力/I-SUB 二/B-OBJ 号/I-OBJ 零/B-VAL 点/I-VAL 八/I-VAL
+  -> 主体: 压力 | 客体: 二号 | 数值: 零点八
+
+输入: 电压五号二百二十
+BIO : 电/B-SUB 压/I-SUB 五/B-OBJ 号/I-OBJ 二/B-VAL 百/I-VAL 二/I-VAL 十/I-VAL
+  -> 主体: 电压 | 客体: 五号 | 数值: 二百二十
+
+输入: 粗糙度一号一点六
+BIO : 粗/B-SUB 糙/I-SUB 度/I-SUB 一/B-OBJ 号/I-OBJ 一/B-VAL 点/I-VAL 六/I-VAL
+  -> 主体: 粗糙度 | 客体: 一号 | 数值: 一点六
+
+输入: 长度一号一百点零五，二号一百点零二，三号九十九点九八
+BIO : 长/B-SUB 度/I-SUB 一/B-OBJ 号/I-OBJ 一/B-VAL 百/I-VAL 点/I-VAL 零/I-VAL 五/I-VAL ，/O 二/B-OBJ 号/I-OBJ 一/B-VAL 百/I-VAL 点/I-VAL 零/I-VAL 二/I-VAL ，/O 三/B-OBJ 号/I-OBJ 九/B-VAL 十/I-VAL 九/I-VAL 点/I-VAL 九/I-VAL 八/I-VAL
+  -> 主体: 长度 | 客体: 一号 | 数值: 一百点零五
+  -> 主体: 长度 | 客体: 二号 | 数值: 一百点零二
+  -> 主体: 长度 | 客体: 三号 | 数值: 九十九点九八
+
+输入: 温度一号三十六点五二号三十六点八
+BIO : 温/B-SUB 度/I-SUB 一/B-OBJ 号/I-OBJ 三/B-VAL 十/I-VAL 六/I-VAL 点/I-VAL 五/I-VAL 二/B-OBJ 号/I-OBJ 三/B-VAL 十/I-VAL 六/I-VAL 点/I-VAL 八/I-VAL
+  -> 主体: 温度 | 客体: 一号 | 数值: 三十六点五
+  -> 主体: 温度 | 客体: 二号 | 数值: 三十六点八
+
+输入: 厚度一号零点八，二号零点七五，三号零点八二
+BIO : 厚/B-SUB 度/I-SUB 一/B-OBJ 号/I-OBJ 零/B-VAL 点/I-VAL 八/I-VAL ，/O 二/B-OBJ 号/I-OBJ 零/B-VAL 点/I-VAL 七/I-VAL 五/I-VAL ，/O 三/B-OBJ 号/I-OBJ 零/B-VAL 点/I-VAL 八/I-VAL 二/I-VAL
+  -> 主体: 厚度 | 客体: 一号 | 数值: 零点八
+  -> 主体: 厚度 | 客体: 二号 | 数值: 零点七五
+  -> 主体: 厚度 | 客体: 三号 | 数值: 零点八二
+
+输入: 电流一号八点五，三号八点九
+BIO : 电/B-SUB 流/I-SUB 一/B-OBJ 号/I-OBJ 八/B-VAL 点/I-VAL 五/I-VAL ，/O 三/B-OBJ 号/I-OBJ 八/B-VAL 点/I-VAL 九/I-VAL
+  -> 主体: 电流 | 客体: 一号 | 数值: 八点五
+  -> 主体: 电流 | 客体: 三号 | 数值: 八点九
+
+输入: 重量一号五十六，二号六十七点八零，三号四十八，四号八十九，五号九十点二五，六号七十点二八
+BIO : 重/B-SUB 量/I-SUB 一/B-OBJ 号/I-OBJ 五/B-VAL 十/I-VAL 六/I-VAL ，/O 二/B-OBJ 号/I-OBJ 六/B-VAL 十/I-VAL 七/I-VAL 点/I-VAL 八/I-VAL 零/I-VAL ，/O 三/B-OBJ 号/I-OBJ 四/B-VAL 十/I-VAL 八/I-VAL ，/O 四/B-OBJ 号/I-OBJ 八/B-VAL 十/I-VAL 九/I-VAL ，/O 五/B-OBJ 号/I-OBJ 九/B-VAL 十/I-VAL 点/I-VAL 二/I-VAL 五/I-VAL ，/O 六/B-OBJ 号/I-OBJ 七/B-VAL 十/I-VAL 点/I-VAL 二/I-VAL 八/I-VAL
+  -> 主体: 重量 | 客体: 一号 | 数值: 五十六
+  -> 主体: 重量 | 客体: 二号 | 数值: 六十七点八零
+  -> 主体: 重量 | 客体: 三号 | 数值: 四十八
+  -> 主体: 重量 | 客体: 四号 | 数值: 八十九
+  -> 主体: 重量 | 客体: 五号 | 数值: 九十点二五
+  -> 主体: 重量 | 客体: 六号 | 数值: 七十点二八
+
+输入: 长度一号五十六二号六十七点八零三号四十八四号八十九五号九十点二五六号七十点二八
+BIO : 长/B-SUB 度/I-SUB 一/B-OBJ 号/I-OBJ 五/B-VAL 十/I-VAL 六/I-VAL 二/B-OBJ 号/I-OBJ 六/B-VAL 十/I-VAL 七/I-VAL 点/I-VAL 八/I-VAL 零/I-VAL 三/B-OBJ 号/I-OBJ 四/B-VAL 十/I-VAL 八/I-VAL 四/B-OBJ 号/I-OBJ 八/B-VAL 十/I-VAL 九/I-VAL 五/B-OBJ 号/I-OBJ 九/B-VAL 十/I-VAL 点/I-VAL 二/I-VAL 五/I-VAL 六/B-OBJ 号/I-OBJ 七/B-VAL 十/I-VAL 点/I-VAL 二/I-VAL 八/I-VAL
+  -> 主体: 长度 | 客体: 一号 | 数值: 五十六
+  -> 主体: 长度 | 客体: 二号 | 数值: 六十七点八零
+  -> 主体: 长度 | 客体: 三号 | 数值: 四十八
+  -> 主体: 长度 | 客体: 四号 | 数值: 八十九
+  -> 主体: 长度 | 客体: 五号 | 数值: 九十点二五
+  -> 主体: 长度 | 客体: 六号 | 数值: 七十点二八
+
+输入: 巡检登记，长度一号一百点零一，宽度一号八十点五五
+BIO : 巡/O 检/O 登/O 记/O ，/O 长/B-SUB 度/I-SUB 一/B-OBJ 号/I-OBJ 一/B-VAL 百/I-VAL 点/I-VAL 零/I-VAL 一/I-VAL ，/O 宽/B-SUB 度/I-SUB 一/B-OBJ 号/I-OBJ 八/B-VAL 十/I-VAL 点/I-VAL 五/I-VAL 五/I-VAL
+  -> 主体: 长度 | 客体: 一号 | 数值: 一百点零一
+  -> 主体: 宽度 | 客体: 一号 | 数值: 八十点五五
+
+输入: 压力六号零点五八，平行度二号零点零三
+BIO : 压/B-SUB 力/I-SUB 六/B-OBJ 号/I-OBJ 零/B-VAL 点/I-VAL 五/I-VAL 八/I-VAL ，/O 平/B-SUB 行/I-SUB 度/I-SUB 二/B-OBJ 号/I-OBJ 零/B-VAL 点/I-VAL 零/I-VAL 三/I-VAL
+  -> 主体: 压力 | 客体: 六号 | 数值: 零点五八
+  -> 主体: 平行度 | 客体: 二号 | 数值: 零点零三
+
+输入: 巡检，厚度二号是一点三二，三号设为一点二一，粗糙度一号零点八
+BIO : 巡/O 检/O ，/O 厚/B-SUB 度/I-SUB 二/B-OBJ 号/I-OBJ 是/O 一/B-VAL 点/I-VAL 三/I-VAL 二/I-VAL ，/O 三/B-OBJ 号/I-OBJ 设/O 为/O 一/B-VAL 点/I-VAL 二/I-VAL 一/I-VAL ，/O 粗/B-SUB 糙/I-SUB 度/I-SUB 一/B-OBJ 号/I-OBJ 零/B-VAL 点/I-VAL 八/I-VAL
+  -> 主体: 厚度 | 客体: 二号 | 数值: 一点三二
+  -> 主体: 厚度 | 客体: 三号 | 数值: 一点二一
+  -> 主体: 粗糙度 | 客体: 一号 | 数值: 零点八
+
+输入: 巡检登记，电压四号改成二百二十，五号约二百三十，温度二号三十六点八，三号三十七点二
+BIO : 巡/O 检/O 登/O 记/O ，/O 电/B-SUB 压/I-SUB 四/B-OBJ 号/I-OBJ 改/O 成/O 二/B-VAL 百/I-VAL 二/I-VAL 十/I-VAL ，/O 五/B-OBJ 号/I-OBJ 约/O 二/B-VAL 百/I-VAL 三/I-VAL 十/I-VAL ，/O 温/B-SUB 度/I-SUB 二/B-OBJ 号/I-OBJ 三/B-VAL 十/I-VAL 六/I-VAL 点/I-VAL 八/I-VAL ，/O 三/B-OBJ 号/I-OBJ 三/B-VAL 十/I-VAL 七/I-VAL 点/I-VAL 二/I-VAL
+  -> 主体: 电压 | 客体: 四号 | 数值: 二百二十
+  -> 主体: 电压 | 客体: 五号 | 数值: 二百三十
+  -> 主体: 温度 | 客体: 二号 | 数值: 三十六点八
+  -> 主体: 温度 | 客体: 三号 | 数值: 三十七点二
+
+输入: 二号列压力零点八七
+BIO : 二/B-SUB 号/I-SUB 列/I-SUB 压/B-OBJ 力/I-OBJ 零/B-VAL 点/I-VAL 八/I-VAL 七/I-VAL
+  -> 主体: 二号列 | 客体: 压力 | 数值: 零点八七
+
+输入: 巡检登记，五号列同轴度零点零二
+BIO : 巡/O 检/O 登/O 记/O ，/O 五/B-SUB 号/I-SUB 列/I-SUB 同/B-OBJ 轴/I-OBJ 度/I-OBJ 零/B-VAL 点/I-VAL 零/I-VAL 二/I-VAL
+  -> 主体: 五号列 | 客体: 同轴度 | 数值: 零点零二
+
+输入: 第一列，长度填一百，宽度填八十点零
+BIO : 第/B-SUB 一/I-SUB 列/I-SUB ，/O 长/B-OBJ 度/I-OBJ 填/O 一/B-VAL 百/I-VAL ，/O 宽/B-OBJ 度/I-OBJ 填/O 八/B-VAL 十/I-VAL 点/I-VAL 零/I-VAL
+  -> 主体: 第一列 | 客体: 长度 | 数值: 一百
+  -> 主体: 第一列 | 客体: 宽度 | 数值: 八十点零
+
+输入: 一号列厚度填一点二，二号列垂直度填零点零一
+BIO : 一/B-SUB 号/I-SUB 列/I-SUB 厚/B-OBJ 度/I-OBJ 填/O 一/B-VAL 点/I-VAL 二/I-VAL ，/O 二/B-SUB 号/I-SUB 列/I-SUB 垂/B-OBJ 直/I-OBJ 度/I-OBJ 填/O 零/B-VAL 点/I-VAL 零/I-VAL 一/I-VAL
+  -> 主体: 一号列 | 客体: 厚度 | 数值: 一点二
+  -> 主体: 二号列 | 客体: 垂直度 | 数值: 零点零一
+
+输入: 第三列高度四十八点五六
+BIO : 第/B-SUB 三/I-SUB 列/I-SUB 高/B-OBJ 度/I-OBJ 四/B-VAL 十/I-VAL 八/I-VAL 点/I-VAL 五/I-VAL 六/I-VAL
+  -> 主体: 第三列 | 客体: 高度 | 数值: 四十八点五六
+
+输入: 第六列密度七点九零
+BIO : 第/B-SUB 六/I-SUB 列/I-SUB 密/B-OBJ 度/I-OBJ 七/B-VAL 点/I-VAL 九/I-VAL 零/I-VAL
+  -> 主体: 第六列 | 客体: 密度 | 数值: 七点九零
+
+输入: 第二列长度四十五点零零
+BIO : 第/B-SUB 二/I-SUB 列/I-SUB 长/B-OBJ 度/I-OBJ 四/B-VAL 十/I-VAL 五/I-VAL 点/I-VAL 零/I-VAL 零/I-VAL
+  -> 主体: 第二列 | 客体: 长度 | 数值: 四十五点零零
+
+输入: 第三列厚度填零点八，第六列位置度填零点零三
+BIO : 第/B-SUB 三/I-SUB 列/I-SUB 厚/B-OBJ 度/I-OBJ 填/O 零/B-VAL 点/I-VAL 八/I-VAL ，/O 第/B-SUB 六/I-SUB 列/I-SUB 位/B-OBJ 置/I-OBJ 度/I-OBJ 填/O 零/B-VAL 点/I-VAL 零/I-VAL 三/I-VAL
+  -> 主体: 第三列 | 客体: 厚度 | 数值: 零点八
+  -> 主体: 第六列 | 客体: 位置度 | 数值: 零点零三
+
+输入: 第二列长度四十五点零零，第五列平行度零点零二
+BIO : 第/B-SUB 二/I-SUB 列/I-SUB 长/B-OBJ 度/I-OBJ 四/B-VAL 十/I-VAL 五/I-VAL 点/I-VAL 零/I-VAL 零/I-VAL ，/O 第/B-SUB 五/I-SUB 列/I-SUB 平/B-OBJ 行/I-OBJ 度/I-OBJ 零/B-VAL 点/I-VAL 零/I-VAL 二/I-VAL
+  -> 主体: 第二列 | 客体: 长度 | 数值: 四十五点零零
+  -> 主体: 第五列 | 客体: 平行度 | 数值: 零点零二
+
+输入: 长度二号是一百点零三
+BIO : 长/B-SUB 度/I-SUB 二/B-OBJ 号/I-OBJ 是/O 一/B-VAL 百/I-VAL 点/I-VAL 零/I-VAL 三/I-VAL
+  -> 主体: 长度 | 客体: 二号 | 数值: 一百点零三
+
+输入: 宽度一号填八十点七五
+BIO : 宽/B-SUB 度/I-SUB 一/B-OBJ 号/I-OBJ 填/O 八/B-VAL 十/I-VAL 点/I-VAL 七/I-VAL 五/I-VAL
+  -> 主体: 宽度 | 客体: 一号 | 数值: 八十点七五
+
+输入: 压力三号为零点六
+BIO : 压/B-SUB 力/I-SUB 三/B-OBJ 号/I-OBJ 为/O 零/B-VAL 点/I-VAL 六/I-VAL
+  -> 主体: 压力 | 客体: 三号 | 数值: 零点六
+
+输入: 电压四号等于二百二十
+BIO : 电/B-SUB 压/I-SUB 四/B-OBJ 号/I-OBJ 等/O 于/O 二/B-VAL 百/I-VAL 二/I-VAL 十/I-VAL
+  -> 主体: 电压 | 客体: 四号 | 数值: 二百二十
+
+输入: 平行度一号设为零点零一
+BIO : 平/B-SUB 行/I-SUB 度/I-SUB 一/B-OBJ 号/I-OBJ 设/O 为/O 零/B-VAL 点/I-VAL 零/I-VAL 一/I-VAL
+  -> 主体: 平行度 | 客体: 一号 | 数值: 零点零一
+
+输入: 粗糙度一号达到零点四
+BIO : 粗/B-SUB 糙/I-SUB 度/I-SUB 一/B-OBJ 号/I-OBJ 达/O 到/O 零/B-VAL 点/I-VAL 四/I-VAL
+  -> 主体: 粗糙度 | 客体: 一号 | 数值: 零点四
+
+输入: 巡检登记厚度四号零点六六六号零点四九零
+BIO : 巡/O 检/O 登/O 记/O 厚/B-SUB 度/I-SUB 四/B-OBJ 号/I-OBJ 零/B-VAL 点/I-VAL 六/I-VAL 六/I-VAL 六/B-OBJ 号/I-OBJ 零/B-VAL 点/I-VAL 四/I-VAL 九/I-VAL 零/I-VAL
+  -> 主体: 厚度 | 客体: 四号 | 数值: 零点六六
+  -> 主体: 厚度 | 客体: 六号 | 数值: 零点四九零
+
+输入: 温度一号三十六点五压力二号零点八
+BIO : 温/B-SUB 度/I-SUB 一/B-OBJ 号/I-OBJ 三/B-VAL 十/I-VAL 六/I-VAL 点/I-VAL 五/I-VAL 压/B-SUB 力/I-SUB 二/B-OBJ 号/I-OBJ 零/B-VAL 点/I-VAL 八/I-VAL
+  -> 主体: 温度 | 客体: 一号 | 数值: 三十六点五
+  -> 主体: 压力 | 客体: 二号 | 数值: 零点八
+
+输入: 登记长度一号一百零五点七四宽度二号八十点三五
+BIO : 登/O 记/O 长/B-SUB 度/I-SUB 一/B-OBJ 号/I-OBJ 一/B-VAL 百/I-VAL 零/I-VAL 五/I-VAL 点/I-VAL 七/I-VAL 四/I-VAL 宽/B-SUB 度/I-SUB 二/B-OBJ 号/I-OBJ 八/B-VAL 十/I-VAL 点/I-VAL 三/I-VAL 五/I-VAL
+  -> 主体: 长度 | 客体: 一号 | 数值: 一百零五点七四
+  -> 主体: 宽度 | 客体: 二号 | 数值: 八十点三五
+
+输入: 巡检登记，压力，测量值一是零点五，测量值二是零点四九，测量值三是零点五一，测量值四是零点六一，测量值五是零点六七，测量值六，零点四八。
+BIO : 巡/O 检/O 登/O 记/O ，/O 压/B-SUB 力/I-SUB ，/O 测/B-OBJ 量/I-OBJ 值/I-OBJ 一/I-OBJ 是/O 零/B-VAL 点/I-VAL 五/I-VAL ，/O 测/B-OBJ 量/I-OBJ 值/I-OBJ 二/I-OBJ 是/O 零/B-VAL 点/I-VAL 四/I-VAL 九/I-VAL ，/O 测/B-OBJ 量/I-OBJ 值/I-OBJ 三/I-OBJ 是/O 零/B-VAL 点/I-VAL 五/I-VAL 一/I-VAL ，/O 测/B-OBJ 量/I-OBJ 值/I-OBJ 四/I-OBJ 是/O 零/B-VAL 点/I-VAL 六/I-VAL 一/I-VAL ，/O 测/B-OBJ 量/I-OBJ 值/I-OBJ 五/I-OBJ 是/O 零/B-VAL 点/I-VAL 六/I-VAL 七/I-VAL ，/O 测/B-OBJ 量/I-OBJ 值/I-OBJ 六/I-OBJ ，/O 零/B-VAL 点/I-VAL 四/I-VAL 八/I-VAL 。/O
+  -> 主体: 压力 | 客体: 测量值一 | 数值: 零点五
+  -> 主体: 压力 | 客体: 测量值二 | 数值: 零点四九
+  -> 主体: 压力 | 客体: 测量值三 | 数值: 零点五一
+  -> 主体: 压力 | 客体: 测量值四 | 数值: 零点六一
+  -> 主体: 压力 | 客体: 测量值五 | 数值: 零点六七
+  -> 主体: 压力 | 客体: 测量值六 | 数值: 零点四八
+
+输入: 长度，测量值一是一百点零，测量值二是九十九点九九
+BIO : 长/B-SUB 度/I-SUB ，/O 测/B-OBJ 量/I-OBJ 值/I-OBJ 一/I-OBJ 是/O 一/B-VAL 百/I-VAL 点/I-VAL 零/I-VAL ，/O 测/B-OBJ 量/I-OBJ 值/I-OBJ 二/I-OBJ 是/O 九/B-VAL 十/I-VAL 九/I-VAL 点/I-VAL 九/I-VAL 九/I-VAL
+  -> 主体: 长度 | 客体: 测量值一 | 数值: 一百点零
+  -> 主体: 长度 | 客体: 测量值二 | 数值: 九十九点九九
+
+输入: 重量测量值一五十六测量值二五十六点零一
+BIO : 重/B-SUB 量/I-SUB 测/B-OBJ 量/I-OBJ 值/I-OBJ 一/I-OBJ 五/B-VAL 十/I-VAL 六/I-VAL 测/B-OBJ 量/I-OBJ 值/I-OBJ 二/I-OBJ 五/B-VAL 十/I-VAL 六/I-VAL 点/I-VAL 零/I-VAL 一/I-VAL
+  -> 主体: 重量 | 客体: 测量值一 | 数值: 五十六
+  -> 主体: 重量 | 客体: 测量值二 | 数值: 五十六点零一
+
+输入: 巡检登记，温度，测量值一为三十六点五，测量值二等于三十六点八
+BIO : 巡/O 检/O 登/O 记/O ，/O 温/B-SUB 度/I-SUB ，/O 测/B-OBJ 量/I-OBJ 值/I-OBJ 一/I-OBJ 为/O 三/B-VAL 十/I-VAL 六/I-VAL 点/I-VAL 五/I-VAL ，/O 测/B-OBJ 量/I-OBJ 值/I-OBJ 二/I-OBJ 等/O 于/O 三/B-VAL 十/I-VAL 六/I-VAL 点/I-VAL 八/I-VAL
+  -> 主体: 温度 | 客体: 测量值一 | 数值: 三十六点五
+  -> 主体: 温度 | 客体: 测量值二 | 数值: 三十六点八
+
+输入: 巡检登记，位置度，测量值一是零点零五，测量值二是零点零八
+BIO : 巡/O 检/O 登/O 记/O ，/O 位/B-SUB 置/I-SUB 度/I-SUB ，/O 测/B-OBJ 量/I-OBJ 值/I-OBJ 一/I-OBJ 是/O 零/B-VAL 点/I-VAL 零/I-VAL 五/I-VAL ，/O 测/B-OBJ 量/I-OBJ 值/I-OBJ 二/I-OBJ 是/O 零/B-VAL 点/I-VAL 零/I-VAL 八/I-VAL
+  -> 主体: 位置度 | 客体: 测量值一 | 数值: 零点零五
+  -> 主体: 位置度 | 客体: 测量值二 | 数值: 零点零八
+
+输入: 厚度测量值一一点二
+BIO : 厚/B-SUB 度/I-SUB 测/B-OBJ 量/I-OBJ 值/I-OBJ 一/I-OBJ 一/B-VAL 点/I-VAL 二/I-VAL
+  -> 主体: 厚度 | 客体: 测量值一 | 数值: 一点二
+
+输入: 密度测量值一负零点五
+BIO : 密/B-SUB 度/I-SUB 测/B-OBJ 量/I-OBJ 值/I-OBJ 一/I-OBJ 负/B-VAL 零/I-VAL 点/I-VAL 五/I-VAL
+  -> 主体: 密度 | 客体: 测量值一 | 数值: 负零点五
+
+输入: 巡检登记，宽度，测量值一，八十点五，测量值二，八十点七
+BIO : 巡/O 检/O 登/O 记/O ，/O 宽/B-SUB 度/I-SUB ，/O 测/B-OBJ 量/I-OBJ 值/I-OBJ 一/I-OBJ ，/O 八/B-VAL 十/I-VAL 点/I-VAL 五/I-VAL ，/O 测/B-OBJ 量/I-OBJ 值/I-OBJ 二/I-OBJ ，/O 八/B-VAL 十/I-VAL 点/I-VAL 七/I-VAL
+  -> 主体: 宽度 | 客体: 测量值一 | 数值: 八十点五
+  -> 主体: 宽度 | 客体: 测量值二 | 数值: 八十点七
+
+输入: 长度一号负零点五
+BIO : 长/B-SUB 度/I-SUB 一/B-OBJ 号/I-OBJ 负/B-VAL 零/I-VAL 点/I-VAL 五/I-VAL
+  -> 主体: 长度 | 客体: 一号 | 数值: 负零点五
+
+输入: 厚度二号一百
+BIO : 厚/B-SUB 度/I-SUB 二/B-OBJ 号/I-OBJ 一/B-VAL 百/I-VAL
+  -> 主体: 厚度 | 客体: 二号 | 数值: 一百
+
+输入: 平行度一号零点零一
+BIO : 平/B-SUB 行/I-SUB 度/I-SUB 一/B-OBJ 号/I-OBJ 零/B-VAL 点/I-VAL 零/I-VAL 一/I-VAL
+  -> 主体: 平行度 | 客体: 一号 | 数值: 零点零一
+
+输入: 位置度三号零点零一
+BIO : 位/B-SUB 置/I-SUB 度/I-SUB 三/B-OBJ 号/I-OBJ 零/B-VAL 点/I-VAL 零/I-VAL 一/I-VAL
+  -> 主体: 位置度 | 客体: 三号 | 数值: 零点零一
+
+输入: 巡检登记，内径偏差，一号，零点零三
+BIO : 巡/O 检/O 登/O 记/O ，/O 内/B-SUB 径/I-SUB 偏/B-SUB 差/I-SUB ，/O 一/B-OBJ 号/I-OBJ ，/O 零/B-VAL 点/I-VAL 零/I-VAL 三/I-VAL
+  -> 主体: 偏差 | 客体: 一号 | 数值: 零点零三
+
+输入: 孔径二号四十点五
+BIO : 孔/B-SUB 径/I-SUB 二/B-OBJ 号/I-OBJ 四/B-VAL 十/I-VAL 点/I-VAL 五/I-VAL
+  -> 主体: 孔径 | 客体: 二号 | 数值: 四十点五
+
+输入: 壁厚三号二点八
+BIO : 壁/B-SUB 厚/I-SUB 三/B-OBJ 号/I-OBJ 二/B-VAL 点/I-VAL 八/I-VAL
+  -> 主体: 壁厚 | 客体: 三号 | 数值: 二点八
+
+输入: 巡检登记，角度，一号列，四十五点零
+BIO : 巡/O 检/O 登/O 记/O ，/O 角/B-SUB 度/I-SUB ，/O 一/B-OBJ 号/I-OBJ 列/I-OBJ ，/O 四/B-VAL 十/I-VAL 五/I-VAL 点/I-VAL 零/I-VAL
+  -> 主体: 角度 | 客体: 一号列 | 数值: 四十五点零
+
+输入: 转速二号一千二百
+BIO : 转/B-SUB 速/I-SUB 二/B-OBJ 号/I-OBJ 一/B-VAL 千/I-VAL 二/I-VAL 百/I-VAL
+  -> 主体: 转速 | 客体: 二号 | 数值: 一千二百
+
+输入: 功率三号十五点五
+BIO : 功/B-SUB 率/I-SUB 三/B-OBJ 号/I-OBJ 十/B-VAL 五/I-VAL 点/I-VAL 五/I-VAL
+  -> 主体: 功率 | 客体: 三号 | 数值: 十五点五
+
+输入: 电阻一号十点二
+BIO : 电/B-SUB 阻/I-SUB 一/B-OBJ 号/I-OBJ 十/B-VAL 点/I-VAL 二/I-VAL
+  -> 主体: 电阻 | 客体: 一号 | 数值: 十点二
+
+输入: 螺距一号零点八
+BIO : 螺/B-SUB 距/I-SUB 一/B-OBJ 号/I-OBJ 零/B-VAL 点/I-VAL 八/I-VAL
+  -> 主体: 螺距 | 客体: 一号 | 数值: 零点八
+
+输入: 孔径一号四十点零五，二号四十点零二，三号三十九点九八
+BIO : 孔/B-SUB 径/I-SUB 一/B-OBJ 号/I-OBJ 四/B-VAL 十/I-VAL 点/I-VAL 零/I-VAL 五/I-VAL ，/O 二/B-OBJ 号/I-OBJ 四/B-VAL 十/I-VAL 点/I-VAL 零/I-VAL 二/I-VAL ，/O 三/B-OBJ 号/I-OBJ 三/B-VAL 十/I-VAL 九/I-VAL 点/I-VAL 九/I-VAL 八/I-VAL
+  -> 主体: 孔径 | 客体: 一号 | 数值: 四十点零五
+  -> 主体: 孔径 | 客体: 二号 | 数值: 四十点零二
+  -> 主体: 孔径 | 客体: 三号 | 数值: 三十九点九八
+
+输入: 角度一号四十五点零二号四十四点九八
+BIO : 角/B-SUB 度/I-SUB 一/B-OBJ 号/I-OBJ 四/B-VAL 十/I-VAL 五/I-VAL 点/I-VAL 零/I-VAL 二/B-OBJ 号/I-OBJ 四/B-VAL 十/I-VAL 四/I-VAL 点/I-VAL 九/I-VAL 八/I-VAL
+  -> 主体: 角度 | 客体: 一号 | 数值: 四十五点零
+  -> 主体: 角度 | 客体: 二号 | 数值: 四十四点九八
+
+输入: 壁厚一号二点八，二号二点七五，三号二点八二
+BIO : 壁/B-SUB 厚/I-SUB 一/B-OBJ 号/I-OBJ 二/B-VAL 点/I-VAL 八/I-VAL ，/O 二/B-OBJ 号/I-OBJ 二/B-VAL 点/I-VAL 七/I-VAL 五/I-VAL ，/O 三/B-OBJ 号/I-OBJ 二/B-VAL 点/I-VAL 八/I-VAL 二/I-VAL
+  -> 主体: 壁厚 | 客体: 一号 | 数值: 二点八
+  -> 主体: 壁厚 | 客体: 二号 | 数值: 二点七五
+  -> 主体: 壁厚 | 客体: 三号 | 数值: 二点八二
+
+输入: 巡检登记，转速一号一千二百，功率一号十五点五
+BIO : 巡/O 检/O 登/O 记/O ，/O 转/B-SUB 速/I-SUB 一/B-OBJ 号/I-OBJ 一/B-VAL 千/I-VAL 二/I-VAL 百/I-VAL ，/O 功/B-SUB 率/I-SUB 一/B-OBJ 号/I-OBJ 十/B-VAL 五/I-VAL 点/I-VAL 五/I-VAL
+  -> 主体: 转速 | 客体: 一号 | 数值: 一千二百
+  -> 主体: 功率 | 客体: 一号 | 数值: 十五点五
+
+输入: 内径偏差二号零点零三，跳动三号零点零五
+BIO : 内/B-SUB 径/I-SUB 偏/I-SUB 差/I-SUB 二/B-OBJ 号/I-OBJ 零/B-VAL 点/I-VAL 零/I-VAL 三/I-VAL ，/O 跳/B-SUB 动/I-SUB 三/B-OBJ 号/I-OBJ 零/B-VAL 点/I-VAL 零/I-VAL 五/I-VAL
+  -> 主体: 内径偏差 | 客体: 二号 | 数值: 零点零三
+  -> 主体: 跳动 | 客体: 三号 | 数值: 零点零五
+
+输入: 巡检，孔径二号是四十点零一，三号设为四十点零三，壁厚一号二点八
+BIO : 巡/O 检/O ，/O 孔/B-SUB 径/I-SUB 二/B-OBJ 号/I-OBJ 是/O 四/B-VAL 十/I-VAL 点/I-VAL 零/I-VAL 一/I-VAL ，/O 三/B-OBJ 号/I-OBJ 设/O 为/O 四/B-VAL 十/I-VAL 点/I-VAL 零/I-VAL 三/I-VAL ，/O 壁/B-SUB 厚/I-SUB 一/B-OBJ 号/I-OBJ 二/B-VAL 点/I-VAL 八/I-VAL
+  -> 主体: 孔径 | 客体: 二号 | 数值: 四十点零一
+  -> 主体: 孔径 | 客体: 三号 | 数值: 四十点零三
+  -> 主体: 壁厚 | 客体: 一号 | 数值: 二点八
+
+输入: 孔径二号是一百点零三
+BIO : 孔/B-SUB 径/I-SUB 二/B-OBJ 号/I-OBJ 是/O 一/B-VAL 百/I-VAL 点/I-VAL 零/I-VAL 三/I-VAL
+  -> 主体: 孔径 | 客体: 二号 | 数值: 一百点零三
+
+输入: 壁厚一号填二点八五
+BIO : 壁/B-SUB 厚/I-SUB 一/B-OBJ 号/I-OBJ 填/O 二/B-VAL 点/I-VAL 八/I-VAL 五/I-VAL
+  -> 主体: 壁厚 | 客体: 一号 | 数值: 二点八五
+
+输入: 偏心距三号为零点零二
+BIO : 偏/B-SUB 心/I-SUB 距/I-SUB 三/B-OBJ 号/I-OBJ 为/O 零/B-VAL 点/I-VAL 零/I-VAL 二/I-VAL
+  -> 主体: 偏心距 | 客体: 三号 | 数值: 零点零二
+
+输入: 间隙四号等于零点一
+BIO : 间/B-SUB 隙/I-SUB 四/B-OBJ 号/I-OBJ 等/O 于/O 零/B-VAL 点/I-VAL 一/I-VAL
+  -> 主体: 间隙 | 客体: 四号 | 数值: 零点一
+
+输入: 波纹度一号设为零点零一
+BIO : 波/B-SUB 纹/I-SUB 度/I-SUB 一/B-OBJ 号/I-OBJ 设/O 为/O 零/B-VAL 点/I-VAL 零/I-VAL 一/I-VAL
+  -> 主体: 波纹度 | 客体: 一号 | 数值: 零点零一
+
+输入: 巡检登记，跳动，测量值一是零点零三，测量值二是零点零四，测量值三是零点零三
+BIO : 巡/O 检/O 登/O 记/O ，/O 跳/B-SUB 动/I-SUB ，/O 测/B-OBJ 量/I-OBJ 值/I-OBJ 一/I-OBJ 是/O 零/B-VAL 点/I-VAL 零/I-VAL 三/I-VAL ，/O 测/B-OBJ 量/I-OBJ 值/I-OBJ 二/I-OBJ 是/O 零/B-VAL 点/I-VAL 零/I-VAL 四/I-VAL ，/O 测/B-OBJ 量/I-OBJ 值/I-OBJ 三/I-OBJ 是/O 零/B-VAL 点/I-VAL 零/I-VAL 三/I-VAL
+  -> 主体: 跳动 | 客体: 测量值一 | 数值: 零点零三
+  -> 主体: 跳动 | 客体: 测量值二 | 数值: 零点零四
+  -> 主体: 跳动 | 客体: 测量值三 | 数值: 零点零三
+
+输入: 孔径，测量值一是一百点零，测量值二是九十九点九九
+BIO : 孔/B-SUB 径/I-SUB ，/O 测/B-OBJ 量/I-OBJ 值/I-OBJ 一/I-OBJ 是/O 一/B-VAL 百/I-VAL 点/I-VAL 零/I-VAL ，/O 测/B-OBJ 量/I-OBJ 值/I-OBJ 二/I-OBJ 是/O 九/B-VAL 十/I-VAL 九/I-VAL 点/I-VAL 九/I-VAL 九/I-VAL
+  -> 主体: 孔径 | 客体: 测量值一 | 数值: 一百点零
+  -> 主体: 孔径 | 客体: 测量值二 | 数值: 九十九点九九
+
+输入: 巡检登记，张力，测量值一为五百，测量值二等于五百零二
+BIO : 巡/O 检/O 登/O 记/O ，/O 张/B-SUB 力/I-SUB ，/O 测/B-OBJ 量/I-OBJ 值/I-OBJ 一/I-OBJ 为/O 五/B-VAL 百/I-VAL ，/O 测/B-OBJ 量/I-OBJ 值/I-OBJ 二/I-OBJ 等/O 于/O 五/B-VAL 百/I-VAL 零/I-VAL 二/I-VAL
+  -> 主体: 张力 | 客体: 测量值一 | 数值: 五百
+  -> 主体: 张力 | 客体: 测量值二 | 数值: 五百零二
+
+输入: 偏心距测量值一零点零一
+BIO : 偏/B-SUB 心/I-SUB 距/I-SUB 测/B-OBJ 量/I-OBJ 值/I-OBJ 一/I-OBJ 零/B-VAL 点/I-VAL 零/I-VAL 一/I-VAL
+  -> 主体: 偏心距 | 客体: 测量值一 | 数值: 零点零一
+
+输入: 巡检登记孔径一号四十点二二号四十点零一
+BIO : 巡/O 检/O 登/O 记/O 孔/B-SUB 径/I-SUB 一/B-OBJ 号/I-OBJ 四/B-VAL 十/I-VAL 点/I-VAL 二/I-VAL 二/B-OBJ 号/I-OBJ 四/B-VAL 十/I-VAL 点/I-VAL 零/I-VAL 一/I-VAL
+  -> 主体: 孔径 | 客体: 一号 | 数值: 四十点二
+  -> 主体: 孔径 | 客体: 二号 | 数值: 四十点零一
+
+输入: 转速一号一千二百功率二号十五点五
+BIO : 转/B-SUB 速/I-SUB 一/B-OBJ 号/I-OBJ 一/B-VAL 千/I-VAL 二/I-VAL 百/I-VAL 功/B-SUB 率/I-SUB 二/B-OBJ 号/I-OBJ 十/B-VAL 五/I-VAL 点/I-VAL 五/I-VAL
+  -> 主体: 转速 | 客体: 一号 | 数值: 一千二百
+  -> 主体: 功率 | 客体: 二号 | 数值: 十五点五

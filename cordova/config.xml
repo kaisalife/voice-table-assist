@@ -1,0 +1,39 @@
+<?xml version='1.0' encoding='utf-8'?>
+<widget id="com.smartinspection.voicetable" version="1.0.0"
+        xmlns="http://www.w3.org/ns/widgets" xmlns:cdv="http://cordova.apache.org/ns/1.0">
+  <name>语音巡检</name>
+  <description>
+    语音巡检表格录入：Cordova 壳内加载本地 H5（origin 为 http://localhost，属于安全上下文），
+    麦克风经 getUserMedia 采集 PCM，WebSocket 推给 VoiceTableAssist 网关识别并回填表格。
+  </description>
+  <author>VoiceTableAssist</author>
+
+  <content src="index.html" />
+
+  <!-- 关键配置：scheme=http → 页面 origin 为 http://localhost。
+       1) Android WebView 将 localhost 视为安全上下文，getUserMedia（麦克风）可用；
+       2) http 页面连接 ws:// 网关不触发混合内容拦截（若用默认 https scheme 会被 WebView 拦掉）。 -->
+  <preference name="scheme" value="http" />
+  <preference name="hostname" value="localhost" />
+
+  <platform name="android">
+    <!-- 麦克风清单权限：cordova-android 10+ 的 SystemWebChromeClient 会在 WebView
+         调用 getUserMedia 时自动发起 RECORD_AUDIO 运行时权限弹窗，
+         但清单里必须显式声明该权限，否则直接静默失败。 -->
+    <config-file target="AndroidManifest.xml" parent="/manifest"
+                 xmlns:android="http://schemas.android.com/apk/res/android">
+      <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    </config-file>
+
+    <!-- 网关走局域网 http 明文：Android 9+ 默认禁止明文流量，显式放开。
+         cordova-android 10+ 的工程布局下清单路径为 app/src/main/AndroidManifest.xml。 -->
+    <edit-config file="app/src/main/AndroidManifest.xml" mode="merge"
+                 target="/manifest/application" xmlns:android="http://schemas.android.com/apk/res/android">
+      <application android:usesCleartextTraffic="true" />
+    </edit-config>
+
+    <!-- AudioWorklet（PCM 采集）需要较新 WebView；getUserMedia 需要 Android 5.0+ -->
+    <preference name="android-minSdkVersion" value="24" />
+    <preference name="android-targetSdkVersion" value="34" />
+  </platform>
+</widget>

@@ -1,0 +1,14 @@
+{
+  "name": "voice-table-cordova",
+  "version": "1.0.0",
+  "private": true,
+  "displayName": "语音巡检",
+  "description": "VoiceTableAssist 语音巡检网关的安卓 Cordova 壳",
+  "scripts": {
+    "sync": "powershell -ExecutionPolicy Bypass -File ./build.ps1",
+    "android": "cordova build android"
+  },
+  "devDependencies": {
+    "cordova-android": "^13.0.0"
+  }
+}

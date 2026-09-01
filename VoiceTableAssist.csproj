@@ -1,0 +1,38 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <AssemblyName>VoiceTableAssist</AssemblyName>
+    <RootNamespace>VoiceTableAssist</RootNamespace>
+    <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- 服务托管：Windows 服务 / systemd（按运行平台选其一） -->
+    <PackageReference Include="Microsoft.Extensions.Hosting.WindowsServices" Version="8.0.1" />
+    <PackageReference Include="Microsoft.Extensions.Hosting.Systemd" Version="8.0.1" />
+    <!-- 进程内 RaNER / gte-base-zh 推理（onnxruntime native 随目标 RID 提供） -->
+    <PackageReference Include="Microsoft.ML.OnnxRuntime" Version="1.20.1" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- wwwroot 随编译拷入输出目录：ContentRoot 固定为 exe 目录、生产模式不加载
+         静态资源清单，从 bin 直接运行时验证页 /voice-mic.js 等才可访问 -->
+    <Content Remove="wwwroot\**" />
+    <Content Include="wwwroot\**" CopyToOutputDirectory="PreserveNewest" />
+    <!-- models/** 是大体积模型资源（raner + embedding），仅运行时从发布目录读取，禁止编译期拷入输出目录 -->
+    <Content Remove="models\**" />
+    <None Include="models\**">
+      <CopyToOutputDirectory>Never</CopyToOutputDirectory>
+    </None>
+    <!-- sherpa-onnx/** 原生可执行 + ASR 模型 + hr 语音资源，由 publish.ps1 随发布目录拷贝，禁止编译期拷入 -->
+    <Content Remove="sherpa-onnx\**" />
+    <None Include="sherpa-onnx\**">
+      <CopyToOutputDirectory>Never</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,492 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>语音巡检 · 测试前端</title>
+<!--
+  两张表测试前端（锅炉巡检 / 汽机巡检），参考 test_front 页面逻辑。
+
+  两种使用方式：
+    1. 网关直接托管（推荐）：部署后平板浏览器打开 http://<网关IP>:15232/ 即是本页。
+    2. 安卓 Cordova 壳：cordova/build.ps1 把本页 + voice-mic.js + audio-capture-worklet.js
+       拷进壳内 www/ 打包 APK（此时"网关地址"填局域网地址，如 http://192.168.1.10:15232）。
+
+  浏览器直访注意：麦克风 API 只在安全上下文开放（localhost / HTTPS）。
+  平板经局域网 IP 用 http 打开时浏览器会禁用麦克风 —— 这是浏览器限制，不是服务问题；
+  该场景请改用 Cordova 壳（壳内 origin 为 http://localhost，属于安全上下文）。
+-->
+<style>
+  :root { --ok:#16a34a; --warn:#d97706; --err:#dc2626; --bd:#d4d4d8; --bg:#f8fafc; }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  body { font-family: "Microsoft YaHei", system-ui, sans-serif; margin: 0; background: var(--bg); color: #18181b; }
+  header { background: #1e293b; color: #fff; padding: 12px 16px; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+  header h1 { font-size: 18px; margin: 0; }
+  header .gw { color: #94a3b8; font-size: 13px; display: flex; align-items: center; gap: 8px; }
+  header input { font-size: 14px; padding: 8px 10px; border-radius: 6px; border: 1px solid #475569; background: #334155; color: #fff; min-width: 240px; }
+  main { max-width: 1100px; margin: 14px auto; padding: 0 14px; }
+  .panel { background: #fff; border: 1px solid var(--bd); border-radius: 10px; padding: 14px 16px; margin-bottom: 14px; }
+  .panel h2 { font-size: 15px; margin: 0 0 10px; }
+  .row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+
+  select, button, input { font-size: 15px; border-radius: 8px; border: 1px solid var(--bd); }
+  select { min-width: 220px; padding: 10px 12px; background: #fff; }
+  button { padding: 12px 18px; min-height: 48px; font-size: 15px; }
+  button.primary { background: #2563eb; color: #fff; border-color: #2563eb; cursor: pointer; }
+  button.recording { background: var(--err); border-color: var(--err); animation: pulse 1.2s infinite; }
+  button.ghost { cursor: pointer; background: #fff; }
+  button:disabled { opacity: .5; cursor: not-allowed; }
+  @keyframes pulse { 50% { opacity: .75; } }
+
+  /* 状态灯：灰=离线/未连，黄=连接中，红=录音中，绿=就绪 */
+  .light { width: 14px; height: 14px; border-radius: 50%; display: inline-block; background: #9ca3af; flex: none; }
+  .light.connecting { background: #f59e0b; animation: pulse 1s infinite; }
+  .light.recording  { background: var(--err); animation: pulse 1.2s infinite; }
+  .light.idle       { background: var(--ok); }
+
+  table.grid { border-collapse: collapse; width: 100%; }
+  table.grid th, table.grid td { border: 1px solid var(--bd); padding: 11px 12px; text-align: center; font-size: 15px; }
+  table.grid th { background: #f1f5f9; }
+  table.grid td.label { background: #fafafa; font-weight: 600; white-space: nowrap; }
+  td.filled { background: #dcfce7; animation: flash .8s; }
+  @keyframes flash { from { background: #86efac; } }
+
+  .chips { display: flex; gap: 8px; flex-wrap: wrap; }
+  .chip { padding: 4px 12px; border-radius: 999px; font-size: 13px; border: 1px solid var(--bd); background: #f4f4f5; }
+  .chip.ok   { background: #dcfce7; border-color: var(--ok); color: var(--ok); }
+  .chip.busy { background: #fef3c7; border-color: var(--warn); color: var(--warn); }
+  .chip.err  { background: #fee2e2; border-color: var(--err); color: var(--err); }
+
+  #live { min-height: 24px; color: #334155; font-size: 15px; word-break: break-all; }
+  .muted { color: #71717a; font-size: 13px; min-height: 18px; }
+  #log { max-height: 180px; overflow-y: auto; font-family: Consolas, monospace; font-size: 12.5px; line-height: 1.8; }
+  #log .i { color: #52525b; } #log .e { color: var(--err); } #log .s { color: var(--ok); }
+
+  @media (max-width: 720px) {
+    header { padding: 10px 12px; }
+    header input { min-width: 0; flex: 1; }
+    table.grid th, table.grid td { padding: 9px 6px; font-size: 14px; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>语音巡检 · 测试前端</h1>
+  <span class="gw">
+    <span id="gwLight" class="light" title="网关连通状态"></span>
+    网关：<input id="base" size="28" placeholder="http://<网关IP>:15232" inputmode="url" autocomplete="off">
+  </span>
+  <button class="ghost" id="recheck" onclick="initAllTables(true)">重新检查初始化</button>
+</header>
+
+<main>
+  <!-- 初始化状态 -->
+  <div class="panel">
+    <h2>1. 表初始化状态 <small style="color:#71717a">（页面打开时自动逐表检查：未导入的表会自动导入并等待向量库构建完成）</small></h2>
+    <div class="chips" id="chips"></div>
+  </div>
+
+  <!-- 选择表 + 语音按钮 -->
+  <div class="panel">
+    <h2>2. 巡检表与语音录入</h2>
+    <div class="row">
+      <span id="micLight" class="light" title="麦克风状态"></span>
+      <label>当前表：
+        <select id="tableSel" onchange="onSwitchTable()"></select>
+      </label>
+      <button class="primary" id="voiceBtn" disabled onclick="onVoiceButton()">开始语音录入</button>
+      <div id="levelWrap" style="display:none;width:90px;height:8px;background:#e4e4e7;border-radius:4px;overflow:hidden" title="麦克风输入电平"><div id="levelBar" style="width:0%;height:100%;background:#22c55e;transition:width .1s"></div></div>
+      <span id="voiceHint" class="muted"></span>
+    </div>
+    <div style="margin-top:12px" id="live">…</div>
+    <div style="margin-top:8px" class="muted">语音累计：<span id="accum">（暂无，点“开始语音录入”后显示）</span></div>
+  </div>
+
+  <!-- 表格 -->
+  <div class="panel">
+    <div class="row" style="justify-content:space-between;margin-bottom:10px">
+      <h2 id="gridTitle" style="margin:0">表格</h2>
+      <button class="ghost" style="min-height:0;padding:6px 14px;font-size:13px" onclick="clearGrid()">清空当前表</button>
+    </div>
+    <table class="grid" id="grid"></table>
+  </div>
+
+  <!-- 日志 -->
+  <div class="panel">
+    <h2>3. 日志</h2>
+    <div id="log"></div>
+  </div>
+</main>
+
+<script src="./voice-mic.js?v=2"></script>
+<script>
+'use strict'
+
+/* ========================= 两张巡检表定义（参考 test_front 场景） =========================
+   rows 为行标签（语音里说「水位」即命中行），大多 2 字、少数 4 字，便于语音识别；
+   columnCount 为序号列数（说「一号」「二号」…）。 */
+const TABLES = [
+  { name: '锅炉巡检', rows: ['水位', '汽压', '汽温', '风压', '流量', '给水温度'],
+    columnCount: 4 },
+  { name: '汽机巡检', rows: ['振动', '油温', '油压', '胀差', '真空', '轴向位移'],
+    columnCount: 4 },
+]
+
+/* ========================= 工具函数 ========================= */
+const $ = (id) => document.getElementById(id)
+
+/* 网关地址：默认当前 origin（网关托管时正确）；Cordova 壳内为 http://localhost，
+   需手工填局域网地址 —— 输入即记住（localStorage），下次打开自动带出。 */
+function loadBase() {
+  const saved = localStorage.getItem('vt-gateway')
+  $('base').value = saved || location.origin
+}
+$('base').addEventListener('change', () => {
+  $('base').value = $('base').value.trim().replace(/\/+$/, '')
+  localStorage.setItem('vt-gateway', $('base').value)
+})
+const base = () => $('base').value.trim().replace(/\/+$/, '')
+
+function log(msg, cls) {
+  const el = document.createElement('div')
+  el.className = cls || 'i'
+  const t = new Date().toLocaleTimeString('zh-CN', { hour12: false })
+  el.textContent = `[${t}] ${msg}`
+  $('log').appendChild(el)
+  $('log').scrollTop = $('log').scrollHeight
+}
+
+async function fetchJson(url, opts) {
+  const res = await fetch(url, opts)
+  let body = null
+  try { body = await res.json() } catch (_) {}
+  if (!res.ok) {
+    throw new Error(`HTTP ${res.status} ${url} ${body && body.error ? '- ' + body.error : ''}`)
+  }
+  return body
+}
+
+/* 网关连通状态灯：5 秒轮询 /api/health（失败只改变灯色，不打日志刷屏） */
+async function pollHealth() {
+  const light = $('gwLight')
+  try {
+    await fetchJson(`${base()}/api/health`)
+    light.className = 'light idle'
+    light.title = '网关在线'
+  } catch (_) {
+    light.className = 'light connecting'
+    light.title = '网关不可达'
+  }
+}
+setInterval(pollHealth, 5000)
+
+/* ============ 1. 初始化逻辑：逐个检查表是否已导入，缺失则导入并等待完成 ============ */
+function renderChips(state) {
+  // state: 'checking' | 'busy' | 'ready' | 'error' | undefined(还没轮到)
+  $('chips').innerHTML = TABLES.map((t, i) => {
+    const s = state[i]
+    const cls = s === 'ready' ? 'ok' : s === 'error' ? 'err' : (s === 'busy' || s === 'checking') ? 'busy' : ''
+    const txt = s === 'ready' ? '已就绪 ✓' : s === 'busy' ? '处理中…' : s === 'error' ? '失败 ✗'
+              : s === 'checking' ? '检查中…' : '等待'
+    return `<span class="chip ${cls}">${t.name}：${txt}</span>`
+  }).join('')
+}
+
+async function initAllTables(isRetry) {
+  const btn = $('recheck'); btn.disabled = true
+  $('voiceBtn').disabled = true
+  const state = new Array(TABLES.length).fill('') // ''=未开始
+  renderChips(state)
+  log(isRetry ? '重新执行初始化检查……' : '页面启动，开始逐表初始化检查……')
+
+  for (let i = 0; i < TABLES.length; i++) {
+    const t = TABLES[i]
+    state[i] = 'busy'; renderChips(state)
+
+    try {
+      // 第一步：问后端这个表的向量库有没有准备好
+      const list = await fetchJson(`${base()}/tables`)
+      const exists = (list.tables || []).some(x => x.name === t.name)
+
+      if (!exists) {
+        // 第二步：没有 → 上传该表结构，await 导入完成（服务端构建向量库）
+        log(`「${t.name}」后端尚未导入，正在上传并构建向量库（可能需要几秒）……`)
+        await fetchJson(`${base()}/import_table`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ tableName: t.name, rows: t.rows.map((r, k) => ({ label: r, index: k + 1 })),
+                                 columnCount: t.columnCount }),
+        })
+        log(`「${t.name}」导入完成，向量库已就绪`, 's')
+      } else {
+        // 已存在：向量库复用，但轻量刷新该表的语音资源（热词/纠错规则），
+        // 保证 sherpa 聚合热词与页面表定义一致（旧表可能缺语音资源）
+        try {
+          await fetchJson(`${base()}/api/table/voice`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ rows: t.rows, columnCount: t.columnCount, tableKey: t.name }),
+          })
+          log(`「${t.name}」已存在于后端（向量库复用），语音热词已刷新`, 's')
+        } catch (e) {
+          log(`「${t.name}」语音资源刷新失败（忽略）: ${e.message}`, 'e')
+        }
+      }
+      state[i] = 'ready'
+    } catch (err) {
+      state[i] = 'error'
+      renderChips(state)
+      log(`「${t.name}」初始化失败：${err.message}`, 'e')
+      log('已中止后续表的初始化，可点右上角"重新检查初始化"重试', 'e')
+      btn.disabled = false
+      return
+    }
+    renderChips(state)
+  }
+
+  log(`全部 ${TABLES.length} 张表初始化完成`, 's')
+  $('voiceBtn').disabled = false
+  $('voiceHint').textContent = ''
+  btn.disabled = false
+}
+
+/* ========================= 2. 表格渲染与回填 ========================= */
+function currentTable() {
+  return TABLES.find(t => t.name === $('tableSel').value)
+}
+
+function renderGrid() {
+  const t = currentTable()
+  $('gridTitle').textContent = `表格 — ${t.name}`
+  const colHeaders = Array.from({ length: t.columnCount }, (_, i) => `${i + 1}号`)
+  let html = '<tr><th>项目 \\ 位置</th>' + colHeaders.map(c => `<th>${c}</th>`).join('') + '</tr>'
+  html += t.rows.map((r, ri) =>
+    `<tr><td class="label">${r}</td>` +
+    Array.from({ length: t.columnCount }, (_, ci) => `<td data-r="${ri + 1}" data-c="${ci + 1}">—</td>`).join('') +
+    '</tr>').join('')
+  $('grid').innerHTML = html
+  loadGrid(t.name)
+}
+
+/* 已填单元格按表名持久化：切表/刷新不丢，方便平板上核对；清空按钮可一键清 */
+function cellKey(name) { return 'vt-cells-' + name }
+
+function loadGrid(name) {
+  try {
+    const data = JSON.parse(localStorage.getItem(cellKey(name)) || '{}')
+    Object.entries(data).forEach(([k, v]) => {
+      const [r, c] = k.split('-')
+      const td = document.querySelector(`#grid td[data-r="${r}"][data-c="${c}"]`)
+      if (td) { td.textContent = v; td.classList.add('filled') }
+    })
+  } catch (_) {}
+}
+
+function saveGrid() {
+  const data = {}
+  document.querySelectorAll('#grid td.filled').forEach(td => {
+    data[td.dataset.r + '-' + td.dataset.c] = td.textContent
+  })
+  localStorage.setItem(cellKey(currentTable().name), JSON.stringify(data))
+}
+
+function clearGrid() {
+  document.querySelectorAll('#grid td').forEach(td => {
+    td.textContent = '—'
+    td.classList.remove('filled')
+  })
+  localStorage.removeItem(cellKey(currentTable().name))
+  log(`已清空「${currentTable().name}」表格`)
+}
+
+/* 累计文本显示：会话途中一直保留（提交后也不清空，方便核对说了什么）；
+   仅在会话结束（stop/closed/stopped）或服务端超限清空（ACCUM_OVERFLOW）时归零。 */
+function showAccum(acc) {
+  const el = $('accum')
+  if (acc) el.textContent = `${acc.length} 字 · ${acc}`
+}
+
+/* WS 连接返回的 cells JSON 更新表格 */
+function applyCells(cells, text) {
+  const t = currentTable()
+  const nR = t.rows.length, nC = t.columnCount
+  let hit = 0
+  for (const c of cells) {
+    const td = document.querySelector(`#grid td[data-r="${c.row}"][data-c="${c.column}"]`)
+    if (!td || c.row < 1 || c.row > nR || c.column < 1 || c.column > nC) continue
+    td.textContent = c.values
+    td.classList.remove('filled'); void td.offsetWidth; td.classList.add('filled') // 重触发动画
+    hit++
+    log(`命中 [行${c.row},${t.rows[c.row - 1]} × 列${c.column}] = ${c.values}`, 's')
+  }
+  saveGrid()
+  const now = new Date().toLocaleTimeString('zh-CN', { hour12: false })
+  $('live').textContent = hit > 0
+    ? `已更新 ${hit} 个单元格（${now}）：${text}`
+    : `无命中（${now}）：“${text}” 未匹配到单元格`
+  if (hit === 0) log('本次提交未命中任何单元格（行列标签可能不匹配）', 'e')
+}
+
+/* ========================= 3. 按钮事件：建立 WS 连接收 cells ========================= */
+let mic = null
+let uiState = 'idle'          // idle | connecting | recording
+let silentSince = 0           // 麦克风开始持续无声的时间戳（0=有声）
+
+/* 麦克风输入电平：录音时实时显示；持续无声给出明确提示
+   （常见于 Windows「设置→隐私→麦克风」未允许桌面应用，或默认输入设备选错/静音）。 */
+let lastDiag = null
+let seenBlocks = -1
+let hasTranscript = false   // 本会话已收到识别文本 → 不再显示"麦克风没有声音"类提示
+function updateLevel(rms) {
+  $('levelBar').style.width = Math.min(100, Math.round(rms * 400)) + '%'
+  const now = Date.now()
+  if (rms > 0.015) silentSince = 0
+  else if (!silentSince) silentSince = now
+  if (uiState === 'recording' && silentSince && now - silentSince > 2000
+      && !hasTranscript && lastDiag && lastDiag.blocks > 0)   // 已有识别文本=麦克风有声，不再误报
+    $('live').textContent = '⚠ 麦克风没有声音：请检查系统「设置→隐私→麦克风」是否允许桌面应用，及默认输入设备/音量'
+}
+
+/* 采集链路诊断：只在异常时打扰（写"识别中"行）；正常时保持电平条即可，避免覆盖识别/累计显示 */
+function renderDiag() {
+  if (uiState !== 'recording' || !lastDiag) return
+  let abnormal = null
+  if (lastDiag.ctxState !== 'running')
+    abnormal = `⚠ 诊断：AudioContext 状态=${lastDiag.ctxState}（未运行，不采集）`
+  else if (!lastDiag.blocks)
+    abnormal = '⚠ 诊断：worklet 已挂载但 0 块数据（process 未运行或无输入）'
+  else if (lastDiag.blocks === seenBlocks && !hasTranscript)
+    abnormal = `⚠ 诊断：采集停滞在 ${lastDiag.blocks} 块（数据流中断）`
+  seenBlocks = lastDiag.blocks
+  if (abnormal) $('live').textContent = abnormal
+}
+
+/* 按钮三态：空闲 ▶ / 连接中（可点击取消）/ 录音中 ■ */
+function setVoiceUI(state, hintText) {
+  uiState = state
+  const btn = $('voiceBtn')
+  const light = $('micLight')
+  const cfg = {
+    idle:       { text: '▶ 开始语音录入',     cls: '',         light: '' },
+    connecting: { text: '… 连接中，点击取消', cls: '',         light: 'connecting' },
+    recording:  { text: '■ 结束录音',        cls: 'recording', light: 'recording' },
+  }[state]
+  btn.textContent = cfg.text
+  btn.className = 'primary ' + cfg.cls
+  btn.disabled = false                       // 三态都可点击：开始 / 取消 / 停止
+  $('levelWrap').style.display = state === 'recording' ? '' : 'none'
+  if (state !== 'recording') { $('levelBar').style.width = '0%'; silentSince = 0 }
+  light.className = 'light ' + cfg.light
+  $('voiceHint').textContent = hintText || ''
+  $('tableSel').disabled = state === 'recording'
+}
+
+function resetVoice() {
+  mic = null                                  // 会话结束销毁实例，下次点击按最新选中的表重建
+  hasTranscript = false                       // 新会话重新启用无声检测
+  $('accum').textContent = '（暂无，点“开始语音录入”后显示）'  // 会话结束：累计行归零
+  setVoiceUI('idle')
+}
+
+async function onVoiceButton() {
+  // 连接中 → 取消（作废未决的权限请求/WS，释放一切资源）
+  if (uiState === 'connecting' && mic) {
+    mic.cancel()
+    log('已取消本次连接')
+    resetVoice()
+    return
+  }
+  // 录音中 → 停止并提交
+  if (mic && mic.active) {
+    mic.stop()
+    return
+  }
+  if (uiState !== 'idle') return             // 防止状态切换间隙重复创建实例
+  if (!window.VoiceMic) { log('voice-mic.js 加载失败，请确认网关地址正确且服务已运行', 'e'); return }
+  if (!navigator.mediaDevices?.getUserMedia) {
+    log('当前环境不支持麦克风：需 localhost / HTTPS 访问；安卓平板请用 Cordova 壳打开本页', 'e')
+    return
+  }
+
+  const t = currentTable()
+  setVoiceUI('connecting', `正在连接语音后端（表：${t.name}）……`)
+  log(`建立语音连接（表：${t.name}）……`)
+
+  // 麦克风设备枚举诊断：区分"无设备 / 权限未给（label 隐藏）/ 有设备"
+  try {
+    const devs = await navigator.mediaDevices.enumerateDevices()
+    const mics = devs.filter(d => d.kind === 'audioinput')
+    log(`音频输入设备 ${mics.length} 个：` +
+      (mics.length ? mics.map(d => d.label || '（未授权，名称隐藏）').join(' / ') : '未检测到任何麦克风'))
+  } catch (e) { log(`设备枚举失败：${e.message}`, 'e') }
+
+  // 麦克风权限状态：被阻止时 Chrome 不再弹窗，必须去地址栏/设置里手工放行
+  try {
+    const perm = await navigator.permissions.query({ name: 'microphone' })
+    if (perm.state === 'granted') {
+      log('麦克风权限：已允许', 's')
+    } else if (perm.state === 'denied') {
+      log('❌ 麦克风权限已被阻止（不会再弹窗）：点地址栏左侧图标 → 网站设置 → 麦克风改为「允许」，或浏览器设置→隐私→网站权限→麦克风 中放行本站点，然后刷新页面', 'e')
+      $('live').textContent = '⚠ 麦克风权限被阻止：见日志区修复指引'
+      setVoiceUI('idle')
+      return
+    } else {
+      log('麦克风权限：未决定 —— 请留意地址栏左侧刚出现的小弹窗，点「允许」', 'e')
+    }
+  } catch (_) { /* Permissions API 不可用时忽略 */ }
+
+  mic = VoiceMic.create({
+    base: base(),
+    table: t.name,                            // 连接即激活该表，HR 同音纠正随表生效
+    workletUrl: './audio-capture-worklet.js?v=2', // 与页面同源加载：网关托管/Cordova 壳内都成立
+    onTranscript: (text, isFinal, acc) => {
+      if (text) hasTranscript = true           // 有识别文本：麦克风必然有声，关闭无声提示
+      $('live').textContent = `识别中：${text}`
+      showAccum(acc)                          // 服务端累计文本：会话途中一直保留显示
+    },
+    onLevel: (rms) => updateLevel(rms),       // 麦克风输入电平（无声时页面给出提示）
+    onDiagnostics: (d) => { lastDiag = { ...d, at: Date.now() }; renderDiag() },  // 采集链路诊断
+    onResult: (cells, text) => {
+      applyCells(cells, text)                 // 收到 [{row,column,values}] 更新表格
+    },
+    onError: (msg) => {
+      log(`语音错误：${msg}`, 'e')
+      // 连接阶段收到任何错误帧都视为致命（sherpa 挂了/表激活失败等），立即退出转圈态；
+      // 录音中的解析类错误（PARSE_FAILED）只提示，不影响本次会话继续说。
+      if (uiState === 'connecting' && mic) { mic.cancel(); resetVoice(); return }
+      $('live').textContent = `解析失败：${msg}`
+    },
+    onStateChange: (s) => {
+      if (s.state === 'connecting')   return                    // 已在 connecting 态
+      if (s.state === 'connected')    return                    // 等 ready 再切录音态
+      if (s.state === 'loading')      setVoiceUI('connecting', s.message || '模型加载中...')   // 懒加载进度
+      if (s.state === 'ready')        setVoiceUI('recording', '说完停顿约 2.5 秒自动提交；再次点击立即提交并结束')
+      if (s.state === 'closed')     { if (uiState !== 'recording') log('语音连接已关闭'); resetVoice() }
+      if (s.state === 'stopped')    { log('本次录入会话已结束'); resetVoice() }
+    },
+  })
+
+  mic.toggle().catch(err => {
+    log(`无法开启录音：${err.message}`, 'e')
+    $('live').textContent = `⚠ 无法开启录音：${err.message}`   // 醒目位置直接显示失败原因
+    resetVoice()
+  })
+}
+
+/* ========================= 页面入口 ========================= */
+function onSwitchTable() {
+  if (mic && mic.active) { log('请先结束当前录音再切换表', 'e'); return }
+  renderGrid()
+  $('live').textContent = '…'
+}
+
+loadBase()
+$('tableSel').innerHTML = TABLES.map(t => `<option value="${t.name}">${t.name}</option>`).join('')
+renderGrid()
+pollHealth()
+
+// 启动即自动串行初始化两张表
+initAllTables(false)
+</script>
+</body>
+</html>
