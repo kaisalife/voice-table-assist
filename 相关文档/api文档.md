@@ -1,6 +1,11 @@
 # VoiceTableAssist API 文档——接口说明
 
 > 依据现有实现整理，供前端、后端调用方及部署验收使用。
+>
+> **源码地址**：<https://github.com/kaisalife/voice-table-assist>
+>
+> GitHub 仓库**不含 models**；网关源码构建前请先在 `app/VoiceTableAssist/` 中执行：
+> `pip install modelscope && modelscope download --model yanxiashuiyun/VoiceTableAssist --local_dir .`
 
 ## 一、概述
 

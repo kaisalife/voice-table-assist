@@ -56,6 +56,19 @@ if (-not (Test-Path (Join-Path $hrCurrent 'hotwords.txt'))) {
 # 附带部署检查脚本与多表自测脚本（临时拉起验证，关掉脚本即停）。
 Copy-Item -Force (Join-Path $project 'deploy-check.ps1') (Join-Path $publish 'deploy-check.ps1')
 Copy-Item -Recurse -Force (Join-Path $project 'selftest') (Join-Path $publish 'selftest')
+# 一键部署入口：双击即跑 deploy-check.ps1 -Selftest（含 VC++ 运行时缺失检测与静默安装）
+if (Test-Path (Join-Path $project 'install.bat')) {
+    Copy-Item -Force (Join-Path $project 'install.bat') (Join-Path $publish 'install.bat')
+}
+# VC++ Redistributable x64：目标机缺它时 sherpa-onnx exe 会启动失败（0xC0000135 或缺 VCRUNTIME140.dll）。
+# 随包带安装包，deploy-check.ps1 检测到缺失时静默安装（/install /quiet /norestart），无需联网。
+$vcRedist = Join-Path $project 'vc_redist.x64.exe'
+if (Test-Path $vcRedist) {
+    Copy-Item -Force $vcRedist (Join-Path $publish 'vc_redist.x64.exe')
+    Write-Host '==> 已附带 VC++ Redistributable x64 安装包（约 25MB，目标机缺时静默安装）'
+} else {
+    Write-Warning '未找到 vc_redist.x64.exe（目标机若缺 VC++ 运行时 sherpa exe 将启动失败）'
+}
 
 # 附带安卓 Cordova 壳模板（config.xml + package.json + build.ps1 + 已同步的 www/）
 if (Test-Path (Join-Path $project 'cordova')) {

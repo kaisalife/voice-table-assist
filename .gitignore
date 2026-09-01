@@ -1,6 +1,9 @@
 # 模型与运行时资产（体积大，不入库）
 models/
 
+# VC++ Redistributable 安装包（第三方二进制，随部署包带，不入库）
+vc_redist.x64.exe
+
 # 构建产物
 bin/
 obj/

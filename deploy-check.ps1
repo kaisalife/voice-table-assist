@@ -26,6 +26,73 @@ $base = "http://127.0.0.1:$Port"
 # 注意：用 127.0.0.1 而不是 localhost——Windows 上 localhost 先解析到 IPv6 ::1，
 # 而 Kestrel 只绑定 IPv4 时 PowerShell 的 Invoke-RestMethod 会因回退等待而超时误判。
 
+# ---- -1) 目标机运行环境前置处理：VC++ 运行时缺失检测 + 静默安装；解 MOTW 锁 ----
+# sherpa-onnx-online-websocket-server.exe 依赖 VC++ 2015-2022 x64 运行时（含较新的
+# VCRUNTIME140_1.dll / MSVCP140_1.dll）；目标机缺它或装旧版时启动报 0xC000007B。
+# 本节随包带 vc_redist.x64.exe，检测到任一关键 DLL 缺失即静默安装（覆盖旧版）。
+# 同时对所有 exe/dll 跑 Unblock-File，解除下载/拷贝产生的 Mark-of-the-Web，避免 SmartScreen 拦截。
+function Test-VcRuntime {
+    # 必须齐全的 5 个 DLL（VC++ 2015-2022 较新版本才有 _1 后缀的）
+    $need = @('VCRUNTIME140.dll','VCRUNTIME140_1.dll','MSVCP140.dll','MSVCP140_1.dll')
+    foreach ($d in $need) {
+        if (-not (Test-Path "$env:SystemRoot\System32\$d")) { return $false }
+    }
+    return $true
+}
+Write-Host "==> 检查目标机运行环境 ..."
+if (-not (Test-VcRuntime)) {
+    $vcExe = Join-Path $PSScriptRoot 'vc_redist.x64.exe'
+    if (Test-Path $vcExe) {
+        Write-Host "     VC++ 运行时缺失或版本过旧，开始静默安装（约 10 秒，覆盖旧版）..."
+        $p = Start-Process -FilePath $vcExe -ArgumentList '/install','/quiet','/norestart' -Wait -PassThru
+        if ($p.ExitCode -eq 0 -or $p.ExitCode -eq 1638 -or $p.ExitCode -eq 3010) {
+            Write-Host "OK    VC++ 运行时已安装（ExitCode=$($p.ExitCode)）"
+            # 装完再验一次；若仍缺，明确报出哪个 DLL 缺，方便定位
+            if (-not (Test-VcRuntime)) {
+                $missing = @('VCRUNTIME140.dll','VCRUNTIME140_1.dll','MSVCP140.dll','MSVCP140_1.dll') |
+                    Where-Object { -not (Test-Path "$env:SystemRoot\System32\$_") }
+                Write-Host "FAIL  安装后仍缺 DLL: $($missing -join ', ')"
+                Write-Host "      请手工双击 vc_redist.x64.exe 安装，或重启目标机后再试"
+                exit 1
+            }
+        } else {
+            Write-Host "FAIL  VC++ 运行时安装失败（ExitCode=$($p.ExitCode)）；请手工双击 vc_redist.x64.exe 安装后重试"
+            exit 1
+        }
+    } else {
+        Write-Host "FAIL  目标机缺 VC++ 运行时，且部署包内未带 vc_redist.x64.exe"
+        Write-Host "      请到 https://aka.ms/vs/17/release/vc_redist.x64.exe 下载安装后重试"
+        exit 1
+    }
+} else {
+    Write-Host "OK    VC++ 运行时已就绪（含 _1 后缀的新版 DLL）"
+}
+# 解 MOTW：从网络下载或拷贝来的 exe/dll 会被标 MOTW，双击触发 SmartScreen；这里统一解锁。
+# -ErrorAction SilentlyContinue：无 MOTW 的文件会报"未标记"，忽略即可。
+Get-ChildItem $PSScriptRoot -Recurse -Include *.exe,*.dll -File |
+    ForEach-Object { Unblock-File -Path $_.FullName -ErrorAction SilentlyContinue }
+Write-Host "OK    已解除 SmartScreen 锁定（Unblock-File）"
+
+# ---- -0.5) sherpa exe 直接启动测试：拿到明确 ExitCode，不再笼统报 0xC000007B ----
+# 用 --help 让 sherpa exe 打印帮助后退出（不监听端口、不阻塞）；ExitCode 0 = 依赖齐全。
+# 失败时列出所有关键依赖 DLL 的存在状态，方便一眼定位缺哪个。
+Write-Host "==> 验证 sherpa-onnx 原生库依赖 ..."
+$sherpaExe = Join-Path $PSScriptRoot 'models\sherpa-onnx\sherpa-onnx-online-websocket-server.exe'
+$sherpaTest = Start-Process -FilePath $sherpaExe -ArgumentList '--help' -Wait -PassThru -NoNewWindow
+if ($sherpaTest.ExitCode -eq 0) {
+    Write-Host "OK    sherpa-onnx exe 依赖齐全（ExitCode=0）"
+} else {
+    Write-Host "FAIL  sherpa-onnx exe 启动失败（ExitCode=$($sherpaTest.ExitCode) = 0x$('{0:X}' -f ([uint32]$sherpaTest.ExitCode))）"
+    Write-Host "      关键依赖 DLL 状态："
+    $deps = @('dxgi.dll','VCRUNTIME140.dll','VCRUNTIME140_1.dll','MSVCP140.dll','MSVCP140_1.dll','dbghelp.dll','SETUPAPI.dll','WS2_32.dll','MSWSOCK.dll')
+    foreach ($d in $deps) {
+        $ok = Test-Path "$env:SystemRoot\System32\$d"
+        Write-Host ("        {0,-25} {1}" -f $d, $(if ($ok) { 'OK' } else { '缺失' }))
+    }
+    Write-Host "      处理建议：若 VC++ 相关 DLL 缺失，重装 vc_redist.x64.exe；若 dxgi.dll 缺失，装 DirectX 修复工具"
+    exit 1
+}
+
 # ---- 0) 部署完整性自检：关键文件缺失提前 FAIL，避免拉起后才暴露部署遗漏 ----
 Write-Host "==> 部署完整性自检 ..."
 $script:fail = 0

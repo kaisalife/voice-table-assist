@@ -1,5 +1,14 @@
 # VoiceTableAssist — 语音表格辅助（单一自包含部署包）
 
+> **源码地址**：<https://github.com/kaisalife/voice-table-assist>
+>
+> GitHub 仓库**不包含** `models/` 目录（模型文件体积较大，不纳入 Git 版本管理）。
+> **模型使用 ModelScope CLI 一键下载**（需先 `pip install modelscope`）：
+> ```
+> modelscope download --model yanxiashuiyun/VoiceTableAssist --local_dir .
+> ```
+> 把 `local_dir` 指向本仓库中的 `app/VoiceTableAssist/` 目录，即可在该目录下生成 `models/` 子目录（与 README 中目录结构完全一致）。
+
 把三部分合并为一个**单进程、单端口(15232)** 的自包含服务包：
 `sherpa-onnx`(本地离线流式 ASR) + `text_to_json`(进程内 RaNER + gte-base-zh) + `backend`(WebSocket/语音资源热切网关)。
 对外只暴露 HTTP/WS 接口与一个验证页，**不再依赖外部 Node NER(15233)、不做跨服务 HTTP 桥**。
@@ -62,6 +71,12 @@ app/VoiceTableAssist/
 ```
 
 > 模型与 sherpa 二进制不编入编译产物：`models/`、`sherpa-onnx/` 由 `publish.ps1` 从仓库源拷贝到发布目录。
+> **注意**：GitHub 仓库 <https://github.com/kaisalife/voice-table-assist> **不含 `models/` 目录**。首次克隆后，先在 `app/VoiceTableAssist/` 目录下执行：
+> ```
+> pip install modelscope
+> modelscope download --model yanxiashuiyun/VoiceTableAssist --local_dir .
+> ```
+> 完成后即得到 `app/VoiceTableAssist/models/`，再构建或运行；完整部署包（已含模型）仍由 `publish.ps1` 生成。
 
 ## 多表数据布局（运行期自动生成）
 
@@ -84,7 +99,16 @@ sherpa-onnx/hr/tables/
 ## 本地构建
 
 ```powershell
-cd app/VoiceTableAssist
+# 1) 克隆源码
+git clone https://github.com/kaisalife/voice-table-assist.git
+cd voice-table-assist/app/VoiceTableAssist
+
+# 2) 补齐 models 目录（GitHub 仓库不含模型，使用 ModelScope CLI 一键下载）
+pip install modelscope
+modelscope download --model yanxiashuiyun/VoiceTableAssist --local_dir .
+#    完成后当前目录下出现 models/{raner, embedding, asr}，再继续构建
+
+# 3) 构建
 dotnet build -c Release
 ```
 
@@ -92,6 +116,7 @@ dotnet build -c Release
 
 ```powershell
 cd app/VoiceTableAssist
+# 打包前确保已按「本地构建」第 2 步补齐 models/ 目录
 powershell -ExecutionPolicy Bypass -File .\publish.ps1            # ASR 模型仅 float32（识别精度更高）
 ```
 
