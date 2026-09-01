@@ -36,8 +36,11 @@ internal sealed record SherpaServerOptions(
             // 端点检测：说话停顿后由 sherpa 主动输出 final 并重置识别流——
             // 不开启的话流式识别永远不发 final，服务端"静默自动提交"无从触发。
             section.GetValue("EnableEndpoint", true),
+            // sherpa 的三条端点规则按 utterance 序号轮换：第 1 句用 rule1、第 2 句用 rule2、
+            // 第 3 句起用 rule3。三条都设成同一停顿阈值，保证每句都能断句并触发提交；
+            // 若像旧版把 rule2/3 设成超大值，则只有第一句能断句，后续语音永不提交。
             section.GetValue("Rule1TrailingSilence", 2.0),   // 停顿 2s 切句
-            section.GetValue("Rule2TrailingSilence", 3600.0), // 禁用默认的 1.2s 激进规则
-            section.GetValue("Rule3TrailingSilence", 3600.0)); // 禁用 rule3
+            section.GetValue("Rule2TrailingSilence", 2.0),
+            section.GetValue("Rule3TrailingSilence", 2.0));
     }
 }

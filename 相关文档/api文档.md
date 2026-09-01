@@ -354,7 +354,7 @@
 | 配置项 | 默认值 | 说明 |
 |---|---|---|
 | `SherpaServer:EnableEndpoint` | `true` | 端点检测：说完停顿后 sherpa 主动输出 final（关闭则只能靠 `stop` 提交） |
-| `SherpaServer:Rule1TrailingSilence` | `2.0` | 停顿多少秒切一句 |
+| `SherpaServer:Rule1TrailingSilence` | `2.0` | 停顿多少秒切一句（Rule2/3 同值，保证每句都能断句） |
 | `Interaction:SilenceMs` | `300` | final 到达后的提交收尾延时 |
 | `Interaction:MaxChars` | `500` | 累积上限，超限自动清空并发 `ACCUM_OVERFLOW` |
 

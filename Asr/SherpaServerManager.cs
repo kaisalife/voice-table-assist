@@ -276,7 +276,8 @@ internal sealed class SherpaServerManager : IHostedService, IDisposable
         args.Add($"--enable-endpoint={(_options.EnableEndpoint ? "true" : "false")}");
         if (_options.EnableEndpoint)
         {
-            // rule1：停顿 Rule1TrailingSilence 秒即切句输出 final；rule2/3 置超大值禁用
+            // sherpa 端点规则按 utterance 序号轮换：rule1→第1句、rule2→第2句、rule3→第3句及以后。
+            // 三条一致，每句停顿 Rule1TrailingSilence 秒即切句输出 final（服务端据此自动提交）。
             args.Add($"--rule1-min-trailing-silence={_options.Rule1TrailingSilence}");
             args.Add($"--rule2-min-trailing-silence={_options.Rule2TrailingSilence}");
             args.Add($"--rule3-min-trailing-silence={_options.Rule3TrailingSilence}");
