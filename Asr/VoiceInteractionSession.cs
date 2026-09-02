@@ -89,6 +89,20 @@ internal sealed class VoiceInteractionSession : IDisposable
         return SubmitAsync(cancellationToken);
     }
 
+    /// <summary>
+    /// 把未进入累计的最新一段 partial 文本并入累计（不触发静默计时器、不触发超限清空）。
+    /// 用于"点结束会话"时收尾：partial 只下发 UI、不进 _accumulated，直接 Flush 会因累计为空而漏发 cells。
+    /// </summary>
+    public void FoldPartial(string? text)
+    {
+        var trimmed = text?.Trim();
+        if (string.IsNullOrEmpty(trimmed)) return;
+        lock (_gate)
+        {
+            _accumulated = MergeText(_accumulated, trimmed);
+        }
+    }
+
     // ---- 私有实现 ----
 
     private void RestartTimer()

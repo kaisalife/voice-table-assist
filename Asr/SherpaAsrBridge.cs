@@ -58,9 +58,12 @@ internal static class SherpaAsrBridge
             // 以及"静默计时器提交撞上连接已释放"的时序竞争（cells 永远发不出去）。
             var finalReceived = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
             var audioBox = new long[1];   // 会话上行音频字节诊断（Interlocked 累加）
+            // 最近一条 partial 文本（single-element holder 跨方法共享）：stop 时把它补 fold 进累计，
+            // 否则 sherpa 端点未切句就停止会导致累计为空、NER 漏掉最后一次识别。
+            var lastPartial = new string?[1];
 
-            var upload = ForwardBrowserAudioAsync(browser, local, interaction, finalReceived.Task, n => Interlocked.Add(ref audioBox[0], n), session.Token);
-            var download = ForwardRecognitionAsync(local, sender, interaction, replacer, finalReceived, session.Token);
+            var upload = ForwardBrowserAudioAsync(browser, local, interaction, finalReceived.Task, n => Interlocked.Add(ref audioBox[0], n), session.Token, lastPartial);
+            var download = ForwardRecognitionAsync(local, sender, interaction, replacer, finalReceived, session.Token, lastPartial);
 
             var first = await Task.WhenAny(upload, download);
             if (first == upload)
@@ -101,7 +104,8 @@ internal static class SherpaAsrBridge
         VoiceInteractionSession? interaction,
         Task finalReceived,
         Action<long> addAudioBytes,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        string?[] lastPartial)
     {
         while (browser.State == WebSocketState.Open && local.State == WebSocketState.Open)
         {
@@ -119,6 +123,8 @@ internal static class SherpaAsrBridge
                     await WsHelper.SendTextAsync(local, "Done", cancellationToken);
                     try { await finalReceived.WaitAsync(TimeSpan.FromSeconds(5), cancellationToken); }
                     catch (TimeoutException) { }
+                    // 把最近一条还没进累计的 partial 文本补 fold（partial 只下发 UI，不进 _accumulated）。
+                    if (interaction is not null) interaction.FoldPartial(lastPartial[0]);
                     if (interaction is not null) await interaction.FlushAsync(cancellationToken);
                     return;
                 }
@@ -139,7 +145,8 @@ internal static class SherpaAsrBridge
         VoiceInteractionSession? interaction,
         HomophoneReplacer? replacer,
         TaskCompletionSource finalReceived,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        string?[] lastPartial)
     {
         while (local.State == WebSocketState.Open && sender.IsOpen)
         {
@@ -168,9 +175,14 @@ internal static class SherpaAsrBridge
                     {
                         item = item with { Accumulated = interaction.OnFinal(item.Text) };
                         finalReceived.TrySetResult();   // accumulated 已落定，stop 侧可以提交了
+                        lastPartial[0] = null;          // final 覆盖了前面的 partial，无需再 fold
                     }
                     else
+                    {
+                        // 记录最近一条 partial 文本：stop 时（final 还没来）用它补 fold 进累计
+                        if (!string.IsNullOrWhiteSpace(item.Text)) lastPartial[0] = item.Text;
                         item = item with { Accumulated = interaction.Accumulated };
+                    }
                 }
 
                 await sender.SendAsync(item, cancellationToken);
