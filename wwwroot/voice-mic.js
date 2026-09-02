@@ -51,6 +51,7 @@
     let capture = null
     let gen = 0              // 会话代号：cancel()/hardStop() 后，一切在途异步结果作废
     let readyTimer = null
+    let stopTimer = null     // 停止后等待服务端回 cells 并关连接的兜底计时器
 
     function send(obj) {
       if (socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify(obj))
@@ -105,8 +106,15 @@
       if (!enabled) return
       enabled = false
       stopping = true
-      send({ type: 'stop' })                       // 触发服务端立即提交累积文本
-      setTimeout(() => { if (!enabled) { stopping = false; teardown() } }, 800)
+      // 立刻停麦克风采集，但保留 socket 等待服务端把累计文本交给 NER、回传 cells 后再自行关闭连接。
+      // 不能用固定延时抢先关闭：服务端要先等 sherpa 输出 final（~1s）再 NER，固定 800ms 会丢掉 cells。
+      releaseAudio()
+      send({ type: 'stop' })
+      // 兜底：服务端异常/未正常关闭时，最多等 8s 强制清理，避免连接一直挂着。
+      clearTimeout(stopTimer)
+      stopTimer = setTimeout(() => {
+        if (stopping) { stopping = false; teardown() }
+      }, 8000)
     }
 
     /** 开/关切换：前端按钮的唯一调用点。 */
@@ -180,7 +188,11 @@
       socket = new WebSocket(url.toString())
       socket.binaryType = 'arraybuffer'
       socket.onopen = () => { if (!stale(myGen)) settings.onStateChange({ state: 'connected' }) }
-      socket.onclose = () => { if (!stale(myGen)) settings.onStateChange({ state: 'closed' }) }
+      socket.onclose = () => {
+        clearTimeout(stopTimer); stopTimer = null
+        stopping = false
+        if (!stale(myGen)) settings.onStateChange({ state: 'closed' })
+      }
       socket.onerror = () => { if (!stale(myGen)) settings.onError('语音后端连接失败（可能已有一路语音会话在进行中）') }
       socket.onmessage = (event) => {
         if (stale(myGen)) return
@@ -220,9 +232,11 @@
     }
 
     function teardown() {
+      clearTimeout(stopTimer); stopTimer = null
       releaseAudio()
       try { socket?.close() } catch (_) {}
       socket = null
+      stopping = false
     }
 
     function releaseAudio() {

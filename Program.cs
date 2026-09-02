@@ -94,7 +94,7 @@ app.MapTableEndpoints();
 // ---- 语音识别流式端点（?table= 连接即激活对应表）----
 // 服务端交互编排：final 文本静默自动提交，直发 type=cells 的解析结果，
 // 前端只负责开关麦克风和收结果。Interaction:SilenceMs 可调（默认 2500ms）。
-app.Map("/api/speech/asr/stream", async context =>
+app.Map("/api/speech/asr/stream", async (HttpContext context) =>
 {
     if (!context.WebSockets.IsWebSocketRequest)
     {
@@ -126,15 +126,10 @@ app.Map("/api/speech/asr/stream", async context =>
     }
 
     var host = context.RequestServices.GetRequiredService<EngineHost>();
-    // 单连接门卫：同时只允许一个语音会话存活，其余连接请求一律拒绝。
-    // 原先为多连接而设的并发编排（每连接索引快照、后台加载并行、并发切表不串表等）随之全部简化。
-    if (!host.TryAcquireSession())
-    {
-        context.Response.StatusCode = StatusCodes.Status409Conflict;
-        await context.Response.WriteAsJsonAsync(new { error = "已有语音会话在进行中，请先结束当前会话再连接" });
-        return;
-    }
-
+    // 单连接门卫："新连接接管旧连接"取代 409 拒接——
+    // 单用户场景下，按按钮发起的新连接即代表旧连接已过时，直接取消旧会话并放行本次连接，
+    // 避免旧连接的半死/残留 socket 锁死会话位，用户任何时刻都能重新开始语音录入。
+    var sessionCts = host.AcquireSession();
     try
     {
         // HR 同音纠正规则按 key 加载（小文件 + 缓存，毫秒级），随连接捕获不随切表漂移。
@@ -142,11 +137,11 @@ app.Map("/api/speech/asr/stream", async context =>
         var replacer = HomophoneReplacerProvider.Get(configuration, tableKey);
         manager.Activate(tableKey);
         var sessionFactory = ConnectionSender.CreateFactory(configuration, context.RequestServices, logger, tableKey);
-        await SherpaAsrBridge.RunAsync(context, SherpaOptions.From(configuration), replacer, context.RequestAborted, sessionFactory);
+        await SherpaAsrBridge.RunAsync(context, SherpaOptions.From(configuration), replacer, context.RequestAborted, sessionCts.Token, sessionFactory);
     }
     finally
     {
-        host.ReleaseSession();
+        host.ReleaseSession(sessionCts);
     }
 });
 

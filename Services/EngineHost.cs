@@ -16,13 +16,14 @@ internal sealed class EngineHost : IHostedService, IDisposable
     private readonly IConfiguration _config;
     private readonly ILogger<EngineHost> _logger;
     private readonly object _gate = new();
+    private readonly object _sessionLock = new();
 
     private RaNerEngine? _raner;
     private EmbeddingEngine? _embed;
     private Task? _loading;
     private volatile bool _loaded;
     private DateTime _lastTouchUtc;
-    private int _activeSessions;
+    private CancellationTokenSource? _sessionCts;
     private PeriodicTimer? _idleTimer;
     private CancellationTokenSource? _idleCts;
 
@@ -78,18 +79,42 @@ internal sealed class EngineHost : IHostedService, IDisposable
     public void Touch() => _lastTouchUtc = DateTime.UtcNow;
 
     /// <summary>
-    /// 抢占唯一语音会话位：同时只允许一个语音连接存活（单连接门卫）。
-    /// 成功返回 true 并 Touch() 推迟空闲卸载；失败返回 false，调用方应拒绝该连接（如 HTTP 409）。
+    /// 抢占唯一语音会话位（"新连接接管旧连接"取代 409 拒接）：
+    /// 若已有旧会话，先将它取消（旧连接 ReceiveAsync 抛异常后自行走 finally 释放），
+    /// 再登记本次新会话并返回其取消源。单用户场景下，按按钮发起的新连接即代表旧连接已过时。
     /// </summary>
-    public bool TryAcquireSession()
+    public CancellationTokenSource AcquireSession()
     {
-        if (Interlocked.CompareExchange(ref _activeSessions, 1, 0) != 0) return false;
+        var cts = new CancellationTokenSource();
+        lock (_sessionLock)
+        {
+            var old = _sessionCts;
+            if (old is not null && !old.IsCancellationRequested)
+            {
+                _logger.LogInformation("[VOICE] 已有语音会话，新连接接管旧连接（旧会话被取消释放）");
+                try { old.Cancel(); } catch { /* 取消旧会话失败不影响新连接 */ }
+            }
+            _sessionCts = cts;
+        }
         Touch();
-        return true;
+        return cts;
     }
 
-    /// <summary>释放语音会话位（会话结束调用，须与 TryAcquireSession 配对）。</summary>
-    public void ReleaseSession() => Interlocked.Exchange(ref _activeSessions, 0);
+    /// <summary>释放本次语音会话位（仅当仍是当前会话时清空；被接管的旧会话释放时不会误清新会话）。</summary>
+    public void ReleaseSession(CancellationTokenSource cts)
+    {
+        lock (_sessionLock)
+        {
+            if (ReferenceEquals(_sessionCts, cts)) _sessionCts = null;
+        }
+        cts.Dispose();
+    }
+
+    /// <summary>当前是否正有活跃语音会话位（会话结束的收尾簿记）。</summary>
+    public bool HasActiveSession
+    {
+        get { lock (_sessionLock) return _sessionCts is not null; }
+    }
 
     // ---- IHostedService ----
 
@@ -134,7 +159,7 @@ internal sealed class EngineHost : IHostedService, IDisposable
             while (await _idleTimer!.WaitForNextTickAsync(cancellationToken).ConfigureAwait(false))
             {
                 if (!_loaded) continue;
-                if (Volatile.Read(ref _activeSessions) > 0) continue;
+                if (HasActiveSession) continue;
                 if (DateTime.UtcNow - _lastTouchUtc <= TimeSpan.FromSeconds(IdleUnloadSeconds)) continue;
                 Unload();
             }

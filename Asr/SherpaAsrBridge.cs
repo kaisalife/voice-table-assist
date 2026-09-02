@@ -19,6 +19,7 @@ internal static class SherpaAsrBridge
 {
     public static async Task RunAsync(
         HttpContext context, SherpaOptions options, HomophoneReplacer? replacer, CancellationToken aborted,
+        CancellationToken takeover,
         Func<ConnectionSender, VoiceInteractionSession>? sessionFactory = null)
     {
         var logger = context.RequestServices.GetRequiredService<ILoggerFactory>().CreateLogger("AsrGateway");
@@ -27,7 +28,7 @@ internal static class SherpaAsrBridge
         using var sender = new ConnectionSender(browser);
         using var interaction = sessionFactory?.Invoke(sender);
         using var local = new ClientWebSocket();
-        using var session = CancellationTokenSource.CreateLinkedTokenSource(aborted);
+        using var session = CancellationTokenSource.CreateLinkedTokenSource(aborted, takeover);
 
         try
         {
