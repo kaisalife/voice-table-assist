@@ -9,7 +9,10 @@ namespace VoiceTableAssist.Asr;
 /// 每条 WS 连接一个的服务端交互编排器：
 /// 累积流式 final 文本 → 静默超时自动提交 → 进程内 RaNER + 向量检索 →
 /// 直接下发解析好的单元格（type=cells）。前端无需再做文本合并/静默判定/二次 HTTP 调用。
-/// 提交后累计文本保留不清（后续语句常省略行标签，需前文主体），仅超 MaxChars 时整体清空重录。
+/// 提交后做"累计精简"：把 NER 抽回的最后一个完整三元组反拼回字符串作为下一轮前缀（原始累计清空），
+/// 主体 Sub 仍在，下一段语音省略行标签时仍能匹配；NER/embedding 重算字符数从整段 → 1 条三元组，
+/// 延迟更低、重复 cells 也不再回放。仅当 NER 没出完整三元组（含占位"?"）时才保留原累计不精简。
+/// 超 MaxChars 时整体清空重录。
 /// </summary>
 internal sealed class VoiceInteractionSession : IDisposable
 {
@@ -157,14 +160,37 @@ internal sealed class VoiceInteractionSession : IDisposable
             _host.Touch();
             var idx = _manager.ActiveIndex;
             var bio = _host.Raner.Predict(text);
+            var triples = TripleExtractor.Extract(bio);
             var cells = new List<CellDto>();
-            foreach (var (sub, obj, val) in TripleExtractor.Extract(bio))
+            foreach (var (sub, obj, val) in triples)
             {
                 var (row, col, _, _) = _host.Embed.Lookup(sub + obj, idx);
                 if (row <= 0) continue;   // 向量检索低置信未命中，跳过该格
                 cells.Add(new CellDto { row = row, column = col, values = ChineseNumeral.ToDecimal(val) });
             }
             await _sender.SendAsync(new BrowserEvent("cells", Text: text, IsFinal: true, Cells: cells), cancellationToken);
+
+            // 累计精简：把"最后一个完整三元组 (Sub,Obj,Val)"反拼回字符串作为下一轮前缀，
+            // 原始累计清空。这样下一段语音补说"三号十一点一一"时，主体 Sub（如"硬度"）
+            // 仍然在前缀里、NER 能继续匹配，而 NER/embedding 重算的字符数从整段 → 1 条三元组。
+            // 守卫：① NER 抽回 0 个三元组 → 保留原累计（主体还没出现，重写会丢前置内容）；
+            //       ② 末尾三元组含占位 "?"（OBJ/VAL 缺一）→ 保留原累计，避免拼出"硬度?/十一点五?"；
+            //       ③ Sub 为空 → 同样保留（防御：NRE 偶发不抽到 SUB，但 OBJ/VAL 已识别）。
+            if (triples.Count > 0)
+            {
+                var last = triples[^1];
+                if (!string.IsNullOrEmpty(last.Sub)
+                    && last.Obj != "?" && last.Val != "?"
+                    && !string.IsNullOrEmpty(last.Obj) && !string.IsNullOrEmpty(last.Val))
+                {
+                    var prefix = (last.Sub + last.Obj + last.Val).Trim();
+                    if (prefix.Length > 0)
+                    {
+                        lock (_gate) { _accumulated = prefix; }
+                        _logger.LogInformation("累计精简: \"{Prev}\" -> \"{Next}\"", text, prefix);
+                    }
+                }
+            }
         }
         catch (OperationCanceledException) { throw; }
         catch (Exception ex)
