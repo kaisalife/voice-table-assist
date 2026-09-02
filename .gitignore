@@ -18,3 +18,5 @@ wwwroot/ca.crt
 
 # 日志
 *.log
+
+.kilo/
