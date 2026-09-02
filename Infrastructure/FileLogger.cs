@@ -1,15 +1,39 @@
 namespace VoiceTableAssist.Infrastructure;
 
-/// <summary>文件日志提供程序，按日期滚动写入 logs/ 目录。</summary>
+/// <summary>文件日志提供程序，按日期滚动写入 logs/ 目录，并在构造时清理超过保留天数的旧日志。</summary>
 internal sealed class FileLoggerProvider : ILoggerProvider
 {
     private readonly string _directory;
 
-    public FileLoggerProvider(string directory) => _directory = directory;
+    public FileLoggerProvider(string directory, int retentionDays = 30)
+    {
+        _directory = directory;
+        CleanupOldLogs(directory, retentionDays);
+    }
 
     public ILogger CreateLogger(string categoryName) => new FileLogger(_directory, categoryName);
 
     public void Dispose() { }
+
+    /// <summary>清理超过 retentionDays 天的旧 app-*.log，防止长期运行 logs/ 无限增长。</summary>
+    private static void CleanupOldLogs(string directory, int retentionDays)
+    {
+        try
+        {
+            if (retentionDays <= 0 || !Directory.Exists(directory)) return;
+            var cutoff = DateTime.UtcNow.AddDays(-retentionDays);
+            foreach (var file in Directory.EnumerateFiles(directory, "app-*.log"))
+            {
+                try
+                {
+                    if (File.GetLastWriteTimeUtc(file) < cutoff) File.Delete(file);
+                }
+                catch (IOException) { /* 被占用（并发写）则跳过 */ }
+                catch (UnauthorizedAccessException) { }
+            }
+        }
+        catch (Exception) { /* 清理失败不影响服务启动 */ }
+    }
 
     private sealed class FileLogger : ILogger
     {

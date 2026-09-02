@@ -50,7 +50,10 @@ builder.Services.AddSingleton<SherpaServerManager>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<SherpaServerManager>());
 
 // 服务模式下的控制台日志不可见，落盘到日志目录便于排查。
-builder.Logging.AddProvider(new FileLoggerProvider(Path.Combine(AppContext.BaseDirectory, "logs")));
+// 按天滚动；启动时自动清理超过 Logging:RetentionDays（默认 30 天）的旧日志，防长期运行撑爆磁盘。
+builder.Logging.AddProvider(new FileLoggerProvider(
+    Path.Combine(AppContext.BaseDirectory, "logs"),
+    builder.Configuration.GetValue("Logging:RetentionDays", 30)));
 
 // CORS：供平板/其他页面跨源调用 /text_to_json 等 HTTP 接口。
 builder.Services.AddCors(o => o.AddDefaultPolicy(p => p.AllowAnyOrigin().AllowAnyMethod().AllowAnyHeader()));
