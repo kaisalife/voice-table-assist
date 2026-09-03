@@ -117,6 +117,12 @@ try {
     }
     Check-File (Join-Path 'models' 'raner') 'RaNER 模型目录 models/raner'
     Check-File (Join-Path 'models' 'embedding') '嵌入模型目录 models/embedding'
+    # GTCRN 降噪模型：可选（工厂噪声场景建议有；缺失时启动自动降级关闭降噪，不阻断部署）
+    if (Test-Path (Join-Path $PSScriptRoot 'models\asr\gtcrn_simple.onnx')) {
+        Write-Host "OK    GTCRN 降噪模型 models/asr/gtcrn_simple.onnx"
+    } else {
+        Write-Host "WARN  GTCRN 降噪模型暂缺 models/asr/gtcrn_simple.onnx（仅 Denoise.Enabled=true 的工厂噪声场景需要）"
+    }
     if (Test-Path (Join-Path $PSScriptRoot $cfg.SherpaServer.HotwordsFile)) {
         Write-Host "OK    sherpa 热词文件 $($cfg.SherpaServer.HotwordsFile)"
     } else {

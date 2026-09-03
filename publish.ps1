@@ -1,4 +1,4 @@
-﻿﻿# 打包发布：self-contained win-x64 + 模型/sherpa hr/wwwroot，打一个 zip。
+﻿# 打包发布：self-contained win-x64 + 模型/sherpa hr/wwwroot，打一个 zip。
 # ASR 模型仅保留 float32 版（识别精度更高）。int8 已从 models/asr 移除。
 # 用法（在 app/VoiceTableAssist 目录）：
 #   powershell -ExecutionPolicy Bypass -File .\publish.ps1
@@ -35,6 +35,18 @@ Copy-Item -Recurse -Force (Join-Path $modelsSrc '*') (Join-Path $publish 'models
 # 模型原始压缩包（下载原件，如 asr 的 *.zip）运行不需要，不入包（单此一项省 550MB+）
 Get-ChildItem (Join-Path $publish 'models') -Recurse -File -Include *.zip, *.tar.bz2, *.tar.gz |
     Remove-Item -Force
+
+# GTCRN 降噪模型（可选，522KB）：工厂噪声场景 Denoise.Enabled=true 时必需
+$gtcrn = Join-Path $publish 'models\asr\gtcrn_simple.onnx'
+if (Test-Path $gtcrn) {
+    $kb = [math]::Round((Get-Item $gtcrn).Length / 1KB)
+    Write-Host "==> GTCRN 降噪模型已随包：models\asr\gtcrn_simple.onnx ($kb KB)"
+    Write-Host '    默认启用：appsettings.json <- AsrProvider.Denoise.Enabled = true'
+} else {
+    Write-Warning 'GTCRN 模型未随包：models\asr\gtcrn_simple.onnx'
+    Write-Warning '  工厂噪声场景建议补上：https://github.com/k2-fsa/sherpa-onnx/releases/download/speech-enhancement-models/gtcrn_simple.onnx'
+    Write-Warning '  缺失时启动自动降级关闭降噪（Denoise.Enabled=true 也仅 WARN 不阻断）'
+}
 
 # 交付包不带运行期用户数据（表注册表 registry.json / 各表向量索引）：
 # 首次启动服务后由前端初始化自动导入建库，避免旧机器的表状态随包污染新部署

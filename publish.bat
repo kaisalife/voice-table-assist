@@ -116,8 +116,8 @@ if exist "%PUBLISH%models\asr\gtcrn_simple.onnx" (
         set /a GTCRN_SIZE_KB=%%~zF / 1024 >NUL
     )
     echo        OK     GTCRN 降噪模型已随包：models\asr\gtcrn_simple.onnx ^(!GTCRN_SIZE_KB! KB^)
-    echo                启用方式：appsettings.json ^<- AsrProvider.Denoise.Enabled = true
-    echo                （DSP 尚未实现，当前 Denoise() 为直通，参考 部署文档.md "GTCRN 降噪"）
+    echo                默认启用：appsettings.json ^<- AsrProvider.Denoise.Enabled = true
+    echo                详见 部署文档.md 第十一节 GTCRN 工厂噪声降噪
 ) else (
     echo        WARN   GTCRN 模型未找到：models\asr\gtcrn_simple.onnx
     echo                工厂噪声场景建议补上：from https://github.com/k2-fsa/sherpa-onnx/releases/download/speech-enhancement-models/gtcrn_simple.onnx

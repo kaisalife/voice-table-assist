@@ -43,6 +43,15 @@ if (Test-Path (Join-Path $modelsSrc 'asr')) {
     throw "未找到 $(Join-Path $modelsSrc 'asr')。ASR 模型必须并入 models/asr/（与 Windows 版一致），否则服务启动后 ASR 不可用。"
 }
 
+# GTCRN 降噪模型（可选，522KB）：随 models/asr 整体拷贝自动带上，这里做存在性提示
+$gtcrn = Join-Path $outDir 'models\asr\gtcrn_simple.onnx'
+if (Test-Path $gtcrn) {
+    $kb = [math]::Round((Get-Item $gtcrn).Length / 1KB)
+    Write-Host "==> GTCRN 降噪模型已随包：models/asr/gtcrn_simple.onnx ($kb KB)"
+} else {
+    Write-Warning 'GTCRN 模型未随包：models/asr/gtcrn_simple.onnx（工厂噪声场景建议补上；缺失时启动自动降级关闭降噪）'
+}
+
 Write-Host "==> 拷贝 Linux sherpa-onnx（来自 sherpa-linux/）"
 if (Test-Path $sherpaLx) {
     New-Item -ItemType Directory -Force -Path (Join-Path $outDir 'sherpa-onnx') | Out-Null
