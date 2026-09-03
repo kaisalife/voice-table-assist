@@ -67,6 +67,7 @@ app/VoiceTableAssist/
 ├─ Endpoints/                   # HTTP 路由分组
 ├─ Dtos/
 ├─ 相关文档/                     # 部署/api/用户指南等（随部署包分发）
+├─ tests/                       # 单元 + 1 个端到端集成（不进部署包，见[巧妙设计.md §4](相关文档/巧妙设计.md)）
 └─ wwwroot/                     # 两张巡检表测试前端（锅炉巡检/汽机巡检）+ voice-mic.js 采集库
 ```
 
@@ -110,7 +111,12 @@ modelscope download --model yanxiashuiyun/VoiceTableAssist --local_dir .
 
 # 3) 构建
 dotnet build -c Release
+
+# 4) 跑测试（51 个纯函数毫秒级 + 1 个端到端 ~3s；端到端需 models/ 在位）
+dotnet test tests/VoiceTableAssist.Tests
 ```
+
+> `tests/` 目录**不参与** `dotnet publish` 也不进部署包：主 csproj 显式排除 + `publish.bat` 显式只 publish 主项目 + 兜底检查。三层保险详见 [巧妙设计.md §4](相关文档/巧妙设计.md)。
 
 ## 打包发布
 

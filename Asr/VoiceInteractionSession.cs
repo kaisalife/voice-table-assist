@@ -201,7 +201,7 @@ internal sealed class VoiceInteractionSession : IDisposable
     }
 
     /// <summary>与验证页一致的流式文本合并（前缀扩展 / 包含去重 / 重叠拼接）。</summary>
-    private static string MergeText(string prev, string cur)
+    internal static string MergeText(string prev, string cur)
     {
         if (string.IsNullOrEmpty(prev)) return cur;
         if (cur.Length == 0 || prev.Contains(cur)) return prev;

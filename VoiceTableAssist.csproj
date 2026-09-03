@@ -11,6 +11,10 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <InternalsVisibleTo Include="VoiceTableAssist.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
     <!-- 服务托管：Windows 服务 / systemd（按运行平台选其一） -->
     <PackageReference Include="Microsoft.Extensions.Hosting.WindowsServices" Version="8.0.1" />
     <PackageReference Include="Microsoft.Extensions.Hosting.Systemd" Version="8.0.1" />
@@ -23,6 +27,10 @@
          静态资源清单，从 bin 直接运行时验证页 /voice-mic.js 等才可访问 -->
     <Content Remove="wwwroot\**" />
     <Content Include="wwwroot\**" CopyToOutputDirectory="PreserveNewest" />
+    <!-- tests/** 由 VoiceTableAssist.Tests 单独编译；避免主项目 SDK 把测试文件纳入自身 Compile 列表 -->
+    <Compile Remove="tests\**" />
+    <Content Remove="tests\**" />
+    <None Remove="tests\**" />
     <!-- models/** 是大体积模型资源（raner + embedding），仅运行时从发布目录读取，禁止编译期拷入输出目录 -->
     <Content Remove="models\**" />
     <None Include="models\**">

@@ -80,10 +80,20 @@ if "%ZIPONLY%"=="1" (
 REM dotnet publish first (skip only if /ZipOnly and publish/ exists)
 if not "%ZIPONLY%"=="1" (
     echo ==^> dotnet publish -c Release -r win-x64 --self-contained true -o publish ...
-    dotnet publish -c Release -r win-x64 --self-contained true -o "%PUBLISH%"
+    REM 显式只发布主项目（不要让 SDK 在解 Solution 的时候把 tests\VoiceTableAssist.Tests 也算进去）
+    dotnet publish "%PROJECT%VoiceTableAssist.csproj" -c Release -r win-x64 --self-contained true -o "%PUBLISH%"
     if errorlevel 1 ( echo FAIL  dotnet publish exit !ERRORLEVEL!. & goto :fail )
 ) else (
     echo SKIP  dotnet publish - /ZipOnly.
+)
+
+REM ===== 1.5) Defensive check: tests/ must never land in publish/ =====
+REM 主 csproj 已显式 <Compile Remove="tests\**" /> + <Content Remove="tests\**" />；
+REM 此处做一次兜底：若发现 publish\ 下出现 tests\ 路径，立刻中止并提示。
+if exist "%PUBLISH%tests" (
+    echo FAIL    publish\ 目录下发现 tests\ 子目录——测试代码被错误发布。
+    echo         检查 VoiceTableAssist.csproj 的 Compile/Content/None Remove 项。
+    goto :fail
 )
 
 REM ===== 2) Copy models (strip archives) =====

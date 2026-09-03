@@ -9,6 +9,10 @@ bin/
 obj/
 publish/
 
+# 测试项目构建产物（tests/*.cs 源码仍入库，仅排除 bin/obj 防 xunit/fluentassertions 二进制污染仓库）
+tests/bin/
+tests/obj/
+
 # 本地环境变量（含密钥）
 .env
 
