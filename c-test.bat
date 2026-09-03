@@ -60,6 +60,14 @@ echo ==^> Prune embedded archives from bundled models/ ...
 for /R "%PUBLISH%models" %%F in (*.zip *.tar.bz2 *.tar.gz *.tgz *.tar) do del /F /Q "%%F"
 if exist "%PUBLISH%models\embedding\tables" rmdir /S /Q "%PUBLISH%models\embedding\tables"
 
+REM ===== 3.5) GTCRN denoise model (optional) =====
+echo ==^> Check GTCRN denoise model ...
+if exist "%PUBLISH%models\asr\gtcrn_simple.onnx" (
+    echo OK      GTCRN denoise model bundled: models/asr/gtcrn_simple.onnx
+) else (
+    echo WARN    GTCRN model missing: models/asr/gtcrn_simple.onnx - optional, only for factory-noise scenes.
+)
+
 REM ===== 4) sherpa hotwords placeholder =====
 echo ==^> Create sherpa hotwords placeholder file ...
 if exist "%PUBLISH%models\sherpa-onnx" set "SHERPA_OUT=%PUBLISH%models\sherpa-onnx"

@@ -123,6 +123,11 @@ if exist "%ROOT%appsettings.json"   (echo         OK     appsettings.json) else 
 if exist "%ROOT%wwwroot\index.html" (echo         OK     wwwroot/index.html) else (echo         MISS   wwwroot/index.html & set "INTEG_MISS=1")
 if exist "%ROOT%models\raner"       (echo         OK     models\raner\) else (echo         MISS   models\raner\ & set "INTEG_MISS=1")
 if exist "%ROOT%models\embedding"   (echo         OK     models\embedding\) else (echo         MISS   models\embedding\ & set "INTEG_MISS=1")
+if exist "%ROOT%models\asr\gtcrn_simple.onnx" (
+    echo         OK     models\asr\gtcrn_simple.onnx
+) else (
+    echo WARN    GTCRN denoise model missing ^(optional; only for Denoise.Enabled=true factory-noise scenes^).
+)
 if defined INTEG_MISS (
     echo FAIL    Core deployment missing; re-run publish.bat and re-extract.
     goto :fail
@@ -183,7 +188,7 @@ for /L %%I in (1,1,60) do (
 del "%TEMP%\vta-health.txt" 2>NUL
 if not defined READY (
     echo FAIL    %BASE%/api/health never became ready in 60s.
-    echo === Tail of recent console output (best-effort) ===
+    echo === Tail of recent console output ^(best-effort^) ===
     if exist "%ROOT%logs\*.log" (
         for /f "delims=" %%F in ('dir /B /O-D "%ROOT%logs\*.log" 2^>NUL') do (
             if not defined READY (

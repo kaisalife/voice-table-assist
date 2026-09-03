@@ -37,7 +37,12 @@ set "OUT=%PROJECT%publish-linux\"
 for %%D in ("%PROJECT%..\..") do set "ZIPDIR=%%~fD\publish"
 set "ZIP=%ZIPDIR%\voice-table-assist-linux-x64.zip"
 
-if defined BASH (
+REM The bash block is emitted from a flat subroutine (NOT inside an if-block):
+REM cmd 5.1 closes a parenthesized block at the first unquoted `)` in echo
+REM text, so `$(...)` command substitutions in bash lines would break parsing
+REM and force error-prone caret escaping that also pollutes the bash output.
+if not defined BASH goto :skipBash
+:bashblock
 echo.
 echo ==============================================================
 echo   Linux publish - COPY this bash block into WSL/Linux host.
@@ -63,6 +68,11 @@ echo find  "$$OUT/models" -type f \
 echo   \( -name '*.zip' -o -name '*.tar.bz2' -o -name '*.tar.gz' -o -name '*.tgz' \) \
 echo   -delete
 echo rm -rf "$$OUT/models/embedding/tables"
+echo if [ -f "$$OUT/models/asr/gtcrn_simple.onnx" ]; then
+echo   echo "OK: GTCRN denoise model bundled $$( du -k "$$OUT/models/asr/gtcrn_simple.onnx" | cut -f1 ) KB"
+echo else
+echo   echo "WARNING: GTCRN denoise model missing models/asr/gtcrn_simple.onnx (optional, factory-noise scenes)"
+echo fi
 echo.
 echo if [ -d "$$PROJECT/sherpa-linux" ]; then
 echo   mkdir -p "$$OUT/sherpa-onnx" ^&^& cp -a "$$PROJECT/sherpa-linux/." "$$OUT/sherpa-onnx/"
@@ -94,10 +104,11 @@ echo     chmod +x VoiceTableAssist sherpa-onnx/*
 echo     ./VoiceTableAssist   (or install a systemd unit; see docs).
 echo ==============================================================
 echo.
-)
+goto :skipBash
+:skipBash
 
 if defined CROSS (
-    echo ==^> Cross-publishing on Windows host (win -^> linux-x64) ...
+    echo ==^> Cross-publishing on Windows host ^(win -^> linux-x64^) ...
     where dotnet >NUL 2>NUL
     if errorlevel 1 ( echo SKIP  dotnet not on PATH; cross-publish skipped. & goto :end )
     where tar    >NUL 2>NUL
@@ -116,6 +127,13 @@ if defined CROSS (
     xcopy "%PROJECT%models" "%OUT%models\" /E /I /H /Y /Q
     for /R "%OUT%models" %%F in (*.zip *.tar.bz2 *.tar.gz *.tgz *.tar) do del /F /Q "%%F"
     if exist "%OUT%models\embedding\tables" rmdir /S /Q "%OUT%models\embedding\tables"
+
+    echo ==^> Check GTCRN denoise model ...
+    if exist "%OUT%models\asr\gtcrn_simple.onnx" (
+        echo OK      GTCRN 降噪模型已随包：models/asr/gtcrn_simple.onnx
+    ) else (
+        echo WARN    GTCRN 模型未随包：models/asr/gtcrn_simple.onnx（工厂噪声场景建议补上；缺失时启动自动降级关闭降噪）
+    )
 
     echo ==^> Copying sherpa-linux/ into sherpa-onnx/ ...
     if exist "%PROJECT%sherpa-linux" (
