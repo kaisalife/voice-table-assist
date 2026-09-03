@@ -45,6 +45,7 @@
 | HTTP | `POST /api/table/voice` | 重建语音资源（缺省目标=当前活动表，可用 `tableKey` 指定） |
 | WS   | `/api/speech/asr/stream?table=` | 语音识别流（16kHz float32 PCM）。**同一时刻仅一路连接**，二路回 409；**服务端自动编排**：静默 2.5 秒判定说完 → 解析 → 直发 `cells` 事件（`Interaction:SilenceMs` 可调）；前端接入见 [api文档.md](相关文档/api文档.md) 极简三行示例（`/voice-mic.js`） |
 | HTTP | `/` | 验证页（wwwroot 麦克风识别） |
+| **进程内** | 工厂噪声场景：GTCRN 降噪（`gtcrn_simple.onnx`，522KB） | 流式 STFT/ISTFT + ONNX，作用于"浏览器 → sherpa"上行 16 kHz float32 PCM；与 ASR 解耦、可独立开关，详见[部署文档 §11](相关文档/部署文档.md) |
 
 > `tableName`/`table` 为空或省略时一律回退：当前活动表 → `default`，旧客户端零改动。
 
@@ -60,7 +61,7 @@ app/VoiceTableAssist/
 ├─ publish-linux.bat            # 打包发布脚本（Linux self-contained，需自备 sherpa-linux/）
 ├─ selftest/selftest.bat        # 一体化自测：HTTP 多表热切换 + WS 就绪延迟 + ASR 语音端到端
 ├─ cordova/                     # 安卓 Cordova 壳模板（config.xml + build.ps1，APK 打包见部署文档第五节）
-├─ Asr/                         # sherpa 进程托管、语音交互编排(VoiceInteractionSession)、同音纠正
+├─ Asr/                         # sherpa 进程托管、语音交互编排(VoiceInteractionSession)、同音纠正、GTCRN 降噪
 ├─ Infrastructure/              # 配置/DotEnv/WebSocket/文件日志
 ├─ Ner/                         # NER 端点（进程内 RaNER）
 ├─ Services/                    # RaNerEngine/EmbeddingEngine/表管理与向量库/三元组/tokenizer/数字转换
@@ -112,7 +113,7 @@ modelscope download --model yanxiashuiyun/VoiceTableAssist --local_dir .
 # 3) 构建
 dotnet build -c Release
 
-# 4) 跑测试（51 个纯函数毫秒级 + 1 个端到端 ~3s；端到端需 models/ 在位）
+# 4) 跑测试（共 56 用例：51 纯函数毫秒级 + 4 DenoiseOptions + 1 GTCRN 集成 ~3s；GTCRN 集成需 models/asr/gtcrn_simple.onnx 在位）
 dotnet test tests/VoiceTableAssist.Tests
 ```
 
@@ -207,6 +208,7 @@ sc.exe start    VoiceTableAssist
 - `Homophone.*`：`hr_char_pinyin.txt`、`hr_common_rules.txt`、`hr_rules.txt`、表目录（default 走 `tables/current`）。
 - `Tables.*`：见下表。
 - `AsrProvider:Endpoint`：sherpa-onnx 流式服务地址（默认 `ws://127.0.0.1:6006`）；`AsrProvider:SampleRate`：采样率（默认 16000，浏览器上行 float32 PCM 透传）。
+- `AsrProvider.Denoise.*`：进程内 GTCRN 工厂噪声降噪（`Enabled`/`ModelPath`/`NumThreads`/`SampleRate`），默认 `Enabled=true`、模型随包；关闭后音频链路零变化。详见[部署文档 §11](相关文档/部署文档.md)。
 
 ### `Tables` 段
 
