@@ -1,4 +1,5 @@
 using System.Net.WebSockets;
+using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.Json;
 using VoiceTableAssist.Infrastructure;
@@ -19,7 +20,7 @@ internal static class SherpaAsrBridge
 {
     public static async Task RunAsync(
         HttpContext context, SherpaOptions options, HomophoneReplacer? replacer, CancellationToken aborted,
-        CancellationToken takeover,
+        CancellationToken takeover, GtcrnDenoiser? denoiser = null,
         Func<ConnectionSender, VoiceInteractionSession>? sessionFactory = null)
     {
         var logger = context.RequestServices.GetRequiredService<ILoggerFactory>().CreateLogger("AsrGateway");
@@ -54,6 +55,10 @@ internal static class SherpaAsrBridge
 
             await sender.SendAsync(new BrowserEvent("ready"), session.Token);
 
+            // 降噪器是进程级单例：每通会话开始必须复位（GRU/STFT/overlap-add 状态），
+            // 否则上一通对话的尾帧会串进本通的开头几帧。
+            denoiser?.Reset();
+
             // 最终 final 信号：stop 时先等识别收尾再提交，避免提交空文本、
             // 以及"静默计时器提交撞上连接已释放"的时序竞争（cells 永远发不出去）。
             var finalReceived = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -62,7 +67,7 @@ internal static class SherpaAsrBridge
             // 否则 sherpa 端点未切句就停止会导致累计为空、NER 漏掉最后一次识别。
             var lastPartial = new string?[1];
 
-            var upload = ForwardBrowserAudioAsync(browser, local, interaction, finalReceived.Task, n => Interlocked.Add(ref audioBox[0], n), session.Token, lastPartial);
+            var upload = ForwardBrowserAudioAsync(browser, local, interaction, finalReceived.Task, n => Interlocked.Add(ref audioBox[0], n), session.Token, lastPartial, denoiser);
             var download = ForwardRecognitionAsync(local, sender, interaction, replacer, finalReceived, session.Token, lastPartial);
 
             var first = await Task.WhenAny(upload, download);
@@ -105,7 +110,8 @@ internal static class SherpaAsrBridge
         Task finalReceived,
         Action<long> addAudioBytes,
         CancellationToken cancellationToken,
-        string?[] lastPartial)
+        string?[] lastPartial,
+        GtcrnDenoiser? denoiser = null)
     {
         while (browser.State == WebSocketState.Open && local.State == WebSocketState.Open)
         {
@@ -120,6 +126,8 @@ internal static class SherpaAsrBridge
                     // 先让 sherpa 输出最终 final（一般 <1s），再立即提交——
                     // 否则此刻 accumulated 为空，真正提交只能靠 2.5s 静默计时器，
                     // 而连接生命周期等不了那么久（cells 丢失）。
+                    // 降噪器 flush：把 < hop 的尾帧补零收尾并复位状态（输出丢弃，仅为清态）。
+                    try { denoiser?.Denoise(Array.Empty<float>(), flush: true); } catch { }
                     await WsHelper.SendTextAsync(local, "Done", cancellationToken);
                     try { await finalReceived.WaitAsync(TimeSpan.FromSeconds(5), cancellationToken); }
                     catch (TimeoutException) { }
@@ -133,10 +141,35 @@ internal static class SherpaAsrBridge
 
             if (message.Value.Type != WebSocketMessageType.Binary) continue;
 
-            // 浏览器上行 float32 PCM，网关透传给 sherpa
-            addAudioBytes(message.Value.Payload.Length);
-            await local.SendAsync(new ArraySegment<byte>(message.Value.Payload), WebSocketMessageType.Binary, true, cancellationToken);
+            // 浏览器上行 float32 PCM，网关原样透传给 sherpa；若启用了 GTCRN 降噪，
+            // 则先解码成 float[] → Denoise() → 重新编码回 byte[] 再上行。
+            var payload = message.Value.Payload;
+            addAudioBytes(payload.Length);
+
+            if (denoiser is not null)
+            {
+                var samples = BytesToFloats(payload);
+                var denoised = denoiser.Denoise(samples);
+                var outBytes = FloatsToBytes(denoised);
+                await local.SendAsync(new ArraySegment<byte>(outBytes), WebSocketMessageType.Binary, true, cancellationToken);
+            }
+            else
+            {
+                await local.SendAsync(new ArraySegment<byte>(payload), WebSocketMessageType.Binary, true, cancellationToken);
+            }
         }
+    }
+
+    /// <summary>IEEE-754 小端 float32 字节 → float[]。</summary>
+    private static float[] BytesToFloats(ReadOnlyMemory<byte> bytes) =>
+        MemoryMarshal.Cast<byte, float>(bytes.Span).ToArray();
+
+    /// <summary>float[] → IEEE-754 小端 float32 字节。</summary>
+    private static byte[] FloatsToBytes(float[] samples)
+    {
+        var bytes = new byte[samples.Length * 4];
+        Buffer.BlockCopy(samples, 0, bytes, 0, bytes.Length);
+        return bytes;
     }
 
     private static async Task ForwardRecognitionAsync(

@@ -107,6 +107,23 @@ echo ==^> Prune embedded archives from bundled models/ ...
 for /R "%PUBLISH%models" %%F in (*.zip *.tar.bz2 *.tar.gz *.tgz *.tar) do del /F /Q "%%F"
 if exist "%PUBLISH%models\embedding\tables" rmdir /S /Q "%PUBLISH%models\embedding\tables"
 
+REM ===== 2.5) GTCRN 降噪模型（可选） =====
+REM GTCRN 522KB ONNX 放 models/asr/，已被 step 2 的 xcopy 整个 models/ 一并复制到发布目录。
+REM 复制完后做一次存在性提示，让操作员一眼看到降噪模型是否随包带出。
+echo ==^> Check GTCRN denoise model ...
+if exist "%PUBLISH%models\asr\gtcrn_simple.onnx" (
+    for %%F in ("%PUBLISH%models\asr\gtcrn_simple.onnx") do (
+        set /a GTCRN_SIZE_KB=%%~zF / 1024 >NUL
+    )
+    echo        OK     GTCRN 降噪模型已随包：models\asr\gtcrn_simple.onnx ^(!GTCRN_SIZE_KB! KB^)
+    echo                启用方式：appsettings.json ^<- AsrProvider.Denoise.Enabled = true
+    echo                （DSP 尚未实现，当前 Denoise() 为直通，参考 部署文档.md "GTCRN 降噪"）
+) else (
+    echo        WARN   GTCRN 模型未找到：models\asr\gtcrn_simple.onnx
+    echo                工厂噪声场景建议补上：from https://github.com/k2-fsa/sherpa-onnx/releases/download/speech-enhancement-models/gtcrn_simple.onnx
+    echo                缺这个文件不影响部署/启动；仅当 Denoise.Enabled=true 时才需要。
+)
+
 REM ===== 3) sherpa hotwords placeholder =====
 echo ==^> Create sherpa hotwords placeholder file ...
 if exist "%PUBLISH%models\sherpa-onnx" set "SHERPA_OUT=%PUBLISH%models\sherpa-onnx"

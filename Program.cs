@@ -49,6 +49,31 @@ else
 builder.Services.AddSingleton<SherpaServerManager>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<SherpaServerManager>());
 
+// GTCRN 进程内 PCM 降噪器（可选）。仅在 Denoise.Enabled=true 且 ONNX 文件存在时注册。
+// 已实现流式 STFT/ISTFT + 状态缓存（与 sherpa-onnx 参考一致），并在 SherpaAsrBridge PCM 上行处调用。
+// 默认 false；启用见相关文档/部署文档.md "GTCRN 降噪" 一节。
+var denoiseCfg = VoiceTableAssist.Infrastructure.DenoiseOptions.From(builder.Configuration);
+var denoiseModelPath = Path.IsPathRooted(denoiseCfg.ModelPath)
+    ? denoiseCfg.ModelPath
+    : Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, denoiseCfg.ModelPath));
+if (denoiseCfg.Enabled)
+{
+    if (File.Exists(denoiseModelPath))
+    {
+        builder.Services.AddSingleton(denoiseCfg);
+        builder.Services.AddSingleton(sp => new GtcrnDenoiser(denoiseModelPath, denoiseCfg.NumThreads, denoiseCfg.SampleRate));
+        Console.WriteLine($"[DENOISE] GTCRN 已注册 model={denoiseModelPath} threads={denoiseCfg.NumThreads}（将接入 PCM 上行降噪）");
+    }
+    else
+    {
+        Console.WriteLine($"[DENOISE] WARN  Denoise.Enabled=true 但模型文件不存在：{denoiseModelPath}。已自动降级为关闭。");
+    }
+}
+else
+{
+    Console.WriteLine("[DENOISE] GTCRN 未启用（appsettings.json AsrProvider.Denoise.Enabled=false）");
+}
+
 // 服务模式下的控制台日志不可见，落盘到日志目录便于排查。
 // 按天滚动；启动时自动清理超过 Logging:RetentionDays（默认 30 天）的旧日志，防长期运行撑爆磁盘。
 builder.Logging.AddProvider(new FileLoggerProvider(
@@ -66,6 +91,24 @@ builder.Services.AddSingleton<TableVectorManager>();
 builder.Services.AddHostedService<TableIdleMonitor>();
 
 var app = builder.Build();
+
+// DENOISE 状态落盘排查：文件日志已注册，此处把 GTCRN 实际加载结果写进日志（Console 在服务模式不可见）。
+{
+    ILogger? denoiseLog = null;
+    try { denoiseLog = app.Services.GetRequiredService<ILoggerFactory>().CreateLogger("Denoise"); }
+    catch { }
+    if (denoiseCfg.Enabled)
+    {
+        var registered = app.Services.GetService<GtcrnDenoiser>() is not null;
+        Console.WriteLine($"[DENOISE] GTCRN {(registered ? "已注册" : "WARN 未注册（模型缺失？）")} model={denoiseModelPath}");
+        denoiseLog?.LogInformation($"[DENOISE] GTCRN {(registered ? "已注册" : "WARN 未注册（模型缺失？）")} model={denoiseModelPath}");
+    }
+    else
+    {
+        Console.WriteLine("[DENOISE] GTCRN 未启用（appsettings.json AsrProvider.Denoise.Enabled=false）");
+        denoiseLog?.LogInformation("[DENOISE] GTCRN 未启用");
+    }
+}
 
 // 启动即激活 default 表（读旧 cell_index.json 或 registry），再自检。
 var tvm = app.Services.GetRequiredService<TableVectorManager>();
@@ -137,7 +180,8 @@ app.Map("/api/speech/asr/stream", async (HttpContext context) =>
         var replacer = HomophoneReplacerProvider.Get(configuration, tableKey);
         manager.Activate(tableKey);
         var sessionFactory = ConnectionSender.CreateFactory(configuration, context.RequestServices, logger, tableKey);
-        await SherpaAsrBridge.RunAsync(context, SherpaOptions.From(configuration), replacer, context.RequestAborted, sessionCts.Token, sessionFactory);
+        var denoiser = context.RequestServices.GetService<GtcrnDenoiser>();   // 默认 NULL（未启用降噪）；启用时已注册单例
+        await SherpaAsrBridge.RunAsync(context, SherpaOptions.From(configuration), replacer, context.RequestAborted, sessionCts.Token, denoiser, sessionFactory);
     }
     finally
     {
