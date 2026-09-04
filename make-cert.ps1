@@ -68,7 +68,13 @@ Get-ChildItem $store -ErrorAction SilentlyContinue |
     Where-Object { $_.Subject -eq $leafCn -and $_.Thumbprint -ne $ca.Thumbprint } |
     Remove-Item -Force
 # SAN text-extension syntax: 2.5.29.17={text}IPAddress=a&IPAddress=b&DNS=localhost
-$sanText = ((($ips | ForEach-Object { "IPAddress=$_" }) + 'DNS=localhost') -join '&')
+# NOTE: the pipeline output MUST be wrapped in @() — with exactly ONE IPv4 the
+# pipeline yields a scalar, and (scalar + 'DNS=localhost') degrades to string
+# concatenation, producing "IPAddress=xDNS=localhost" (no '&') which CertEnroll
+# rejects with 0x80070057 ERROR_INVALID_PARAMETER.
+$sanParts = @($ips | ForEach-Object { "IPAddress=$_" })
+$sanParts += 'DNS=localhost'
+$sanText = $sanParts -join '&'
 $leaf = New-SelfSignedCertificate -Subject $leafCn `
     -Signer $ca -KeyExportPolicy Exportable -KeySpec KeyExchange -KeyLength 2048 `
     -HashAlgorithm SHA256 -KeyUsage DigitalSignature,KeyEncipherment `
