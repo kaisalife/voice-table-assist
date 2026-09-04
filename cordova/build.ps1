@@ -47,15 +47,21 @@ if (-not (Test-Path (Join-Path $cordovaDir 'node_modules'))) {
 }
 
 if ($Build) {
-    # ---- 2a) 构建环境自动探测（本机一次性铺过：SDK=D:\Android\Sdk，Gradle=D:\Android\gradle-8.7，JDK=Android Studio 自带 JBR）----
+    # ---- 2a) 构建环境自动探测（本机一次性铺过：SDK=D:\Android\Sdk，Gradle=D:\Android\gradle-8.14.2，JDK=Android Studio 自带 JBR）----
     if (-not $env:ANDROID_HOME -and (Test-Path 'D:\Android\Sdk\platform-tools\adb.exe')) { $env:ANDROID_HOME = 'D:\Android\Sdk' }
     if (-not $env:ANDROID_SDK_ROOT -and $env:ANDROID_HOME) { $env:ANDROID_SDK_ROOT = $env:ANDROID_HOME }
     if (-not $env:JAVA_HOME -or -not (Test-Path "$env:JAVA_HOME\bin\java.exe")) {
         $jbr = 'C:\Program Files\Android\Android Studio\jbr'
         if (Test-Path "$jbr\bin\java.exe") { $env:JAVA_HOME = $jbr }
     }
-    $gradleBin = 'D:\Android\gradle-8.7\bin'
+    $gradleBin = 'D:\Android\gradle-8.14.2\bin'
     if (Test-Path "$gradleBin\gradle.bat") { $env:PATH = "$gradleBin;$env:JAVA_HOME\bin;$env:PATH" }
+    # cordova-android 15 的 gradle wrapper 会联网校验 distribution URL，国内直连 services.gradle.org 易超时；
+    # 用本地已下载的 gradle zip 覆盖，绕开网络。
+    $localGradleZip = 'D:\Android\gradle-8.14.2-bin.zip'
+    if ((Test-Path $localGradleZip) -and -not $env:CORDOVA_ANDROID_GRADLE_DISTRIBUTION_URL) {
+        $env:CORDOVA_ANDROID_GRADLE_DISTRIBUTION_URL = 'file:///' + ($localGradleZip -replace '\\','/')
+    }
 
     Push-Location $cordovaDir
     try {

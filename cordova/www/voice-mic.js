@@ -123,20 +123,29 @@
     }
 
     async function prepareAudio(myGen) {
+      // 关键顺序：先 getUserMedia 拿麦克风流，再创建/resume AudioContext。
+      // Android WebView 若先创建并 resume AudioContext，会先抢占音频焦点，
+      // 导致后续 getUserMedia 抛 NotReadableError「Could not start audio source」。
+      let stream
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({
+          audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true },
+        })
+      } catch (e) {
+        if (stale(myGen)) throw e
+        // 部分 ROM/WebView 对进阶约束支持不全，回退到最简约束再试一次
+        stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      }
+      if (stale(myGen)) {                          // 权限弹窗回来时已被取消 → 立刻还麦
+        stream.getTracks().forEach((t) => t.stop())
+        return
+      }
+
       audioContext = new AudioContext()
       const workletUrl = settings.workletUrl || new URL('audio-capture-worklet.js', settings.base).toString()
       await audioContext.audioWorklet.addModule(workletUrl)
       if (stale(myGen)) { releaseAudio(); return }
       if (audioContext.state === 'suspended') await audioContext.resume()
-
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true },
-      })
-      if (stale(myGen)) {                          // 权限弹窗回来时已被取消 → 立刻还麦
-        stream.getTracks().forEach((t) => t.stop())
-        releaseAudio()
-        return
-      }
 
       const source = audioContext.createMediaStreamSource(stream)
       const node = new AudioWorkletNode(audioContext, 'pcm-capture')
