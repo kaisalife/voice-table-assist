@@ -72,6 +72,14 @@ Copy-Item -Recurse -Force (Join-Path $project 'selftest') (Join-Path $publish 's
 if (Test-Path (Join-Path $project 'install.bat')) {
     Copy-Item -Force (Join-Path $project 'install.bat') (Join-Path $publish 'install.bat')
 }
+# HTTPS 证书生成脚本：install.bat 在 certs\gateway.pfx 或 wwwroot\ca.crt 缺失时自动调它，
+# 目标机若无这两个文件、又不带 make-cert，则 HTTPS 自愈会失败。所以必须随包带。
+if (Test-Path (Join-Path $project 'make-cert.bat')) {
+    Copy-Item -Force (Join-Path $project 'make-cert.bat') (Join-Path $publish 'make-cert.bat')
+}
+if (Test-Path (Join-Path $project 'make-cert.ps1')) {
+    Copy-Item -Force (Join-Path $project 'make-cert.ps1') (Join-Path $publish 'make-cert.ps1')
+}
 # VC++ Redistributable x64：目标机缺它时 sherpa-onnx exe 会启动失败（0xC0000135 或缺 VCRUNTIME140.dll）。
 # 随包带安装包，deploy-check.ps1 检测到缺失时静默安装（/install /quiet /norestart），无需联网。
 $vcRedist = Join-Path $project 'vc_redist.x64.exe'

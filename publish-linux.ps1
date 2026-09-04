@@ -67,6 +67,10 @@ if (Test-Path $sherpaLx) {
 # 附带部署检查脚本与多表自测脚本（目标机需 pwsh 运行；临时拉起验证，关掉脚本即停）
 Copy-Item -Force (Join-Path $project 'deploy-check.ps1') (Join-Path $outDir 'deploy-check.ps1')
 Copy-Item -Recurse -Force (Join-Path $project 'selftest') (Join-Path $outDir 'selftest')
+# HTTPS 证书生成脚本（PowerShell，跨平台 pwsh 可执行）：目标机若无 certs\gateway.pfx 必带
+if (Test-Path (Join-Path $project 'make-cert.ps1')) {
+    Copy-Item -Force (Join-Path $project 'make-cert.ps1') (Join-Path $outDir 'make-cert.ps1')
+}
 
 # 附带安卓 Cordova 壳模板（config.xml + package.json + build.ps1 + 已同步的 www/）
 if (Test-Path (Join-Path $project 'cordova')) {
