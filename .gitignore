@@ -16,6 +16,7 @@ vc_redist.x64.exe
 bin/
 obj/
 publish/
+publish-linux/
 
 # Cordova 安卓壳构建产物与依赖（源码只留 config.xml/package.json/build.ps1/www）
 cordova/platforms/
