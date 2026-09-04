@@ -1,4 +1,4 @@
-﻿# ============================================================================
+# ============================================================================
 # Cordova 安卓壳构建辅助（PS 5.1+）。
 #
 # 原理：APK 的 WebView 加载壳内本地页面（origin=http://localhost，安全上下文
@@ -47,6 +47,16 @@ if (-not (Test-Path (Join-Path $cordovaDir 'node_modules'))) {
 }
 
 if ($Build) {
+    # ---- 2a) 构建环境自动探测（本机一次性铺过：SDK=D:\Android\Sdk，Gradle=D:\Android\gradle-8.7，JDK=Android Studio 自带 JBR）----
+    if (-not $env:ANDROID_HOME -and (Test-Path 'D:\Android\Sdk\platform-tools\adb.exe')) { $env:ANDROID_HOME = 'D:\Android\Sdk' }
+    if (-not $env:ANDROID_SDK_ROOT -and $env:ANDROID_HOME) { $env:ANDROID_SDK_ROOT = $env:ANDROID_HOME }
+    if (-not $env:JAVA_HOME -or -not (Test-Path "$env:JAVA_HOME\bin\java.exe")) {
+        $jbr = 'C:\Program Files\Android\Android Studio\jbr'
+        if (Test-Path "$jbr\bin\java.exe") { $env:JAVA_HOME = $jbr }
+    }
+    $gradleBin = 'D:\Android\gradle-8.7\bin'
+    if (Test-Path "$gradleBin\gradle.bat") { $env:PATH = "$gradleBin;$env:JAVA_HOME\bin;$env:PATH" }
+
     Push-Location $cordovaDir
     try {
         cordova build android

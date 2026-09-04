@@ -80,6 +80,36 @@
 </header>
 
 <main>
+  <!-- 局域网 http 访问引导：麦克风被浏览器安全策略锁死时给出解锁步骤（免问人） -->
+  <div class="panel" id="secCtxPanel" style="display:none;border-color:#f59e0b;background:#fffbeb">
+    <h2 style="color:#b45309">⚠ 当前为非安全上下文，浏览器已禁用麦克风</h2>
+    <div class="muted" style="margin-bottom:10px">
+      你正用 <b id="secCtxOrigin"></b>（局域网 http 地址）打开本页，浏览器的安全策略只对 localhost / HTTPS 开放麦克风。
+      以下两种方式任选其一，做完刷新本页即可语音录入：
+    </div>
+    <div style="display:flex;gap:18px;flex-wrap:wrap">
+      <div style="flex:1;min-width:280px;border:1px solid #f59e0b;border-radius:8px;padding:10px 12px">
+        <b>方式一：Chrome 开关（约 30 秒，这台设备一次）</b>
+        <ol style="margin:8px 0 0;padding-left:20px;line-height:1.9">
+          <li>Chrome 地址栏输入 <code>chrome://flags/#unsafely-treat-insecure-origin-as-secure</code></li>
+          <li>在输入框填入
+            <button class="ghost" style="min-height:0;padding:2px 10px;font-size:12px" onclick="copySecOrigin(this)">复制</button>
+            <code id="secCtxUrl" style="word-break:break-all"></code></li>
+          <li>右侧下拉选 <b>Enabled</b> → 点底部 <b>Relaunch</b> 重启浏览器</li>
+          <li>重新打开本页 → 点「开始语音录入」→ 允许麦克风</li>
+        </ol>
+      </div>
+      <div style="flex:1;min-width:280px;border:1px solid var(--bd);border-radius:8px;padding:10px 12px">
+        <b>方式二：安装证书（一次，永久生效）</b>
+        <ol style="margin:8px 0 0;padding-left:20px;line-height:1.9">
+          <li><a id="secCtxCaLink" href="/ca.crt">点此下载 ca.crt</a>，下载后点开文件按向导安装（问用途选"VPN 和应用"）</li>
+          <li>改用 <code id="secCtxHttps"></code> 打开本页（注意端口 <b>15433</b>）</li>
+          <li>允许麦克风即可</li>
+        </ol>
+      </div>
+    </div>
+  </div>
+
   <!-- 初始化状态 -->
   <div class="panel">
     <h2>1. 表初始化状态 <small style="color:#71717a">（打开页面自动逐表检查导入；也可在下方选表后点「导入当前表」手动导入）</small></h2>
@@ -659,6 +689,26 @@ loadBase()
 if (location.protocol === 'file:') {
   $('live').textContent = '⚠ 不要直接双击打开本 HTML 文件。请先运行 install.bat（或 VoiceTableAssist.exe）启动服务，再用浏览器访问 http://<网关IP>:15232/'
   log('检测到 file:// 协议：页面连不上网关。请通过 http://127.0.0.1:15232/ 访问', 'e')
+}
+
+/* 非安全上下文检测：http + 局域网 IP（非 localhost）打开时，浏览器禁用 getUserMedia。
+   弹出黄色引导面板，把 Chrome flags 要填的地址与证书下载链接自动生成好，测试人员照做即可。 */
+function copySecOrigin(btn) {
+  const url = $('secCtxUrl').textContent
+  navigator.clipboard?.writeText(url).then(() => {
+    btn.textContent = '已复制 ✓'
+    setTimeout(() => btn.textContent = '复制', 1500)
+  }).catch(() => {})
+}
+if (location.protocol === 'http:' && !window.isSecureContext
+    && !['localhost', '127.0.0.1', '[::1]'].includes(location.hostname)) {
+  const httpUrl = location.origin          // http://192.168.x.x:15232
+  const httpsUrl = `https://${location.hostname}:15433/`
+  $('secCtxOrigin').textContent = httpUrl
+  $('secCtxUrl').textContent = httpUrl
+  $('secCtxHttps').textContent = httpsUrl
+  $('secCtxPanel').style.display = ''
+  log('当前为非安全上下文（http+局域网IP）：麦克风已被浏览器禁用，见页面顶部引导面板解锁', 'e')
 }
 /* 下拉框选项：内置表 + H5 动态导入表；selected 指定选中项（缺省第一项） */
 function renderTableOptions(selected) {

@@ -80,6 +80,36 @@
 </header>
 
 <main>
+  <!-- 局域网 http 访问引导：麦克风被浏览器安全策略锁死时给出解锁步骤（免问人） -->
+  <div class="panel" id="secCtxPanel" style="display:none;border-color:#f59e0b;background:#fffbeb">
+    <h2 style="color:#b45309">⚠ 当前为非安全上下文，浏览器已禁用麦克风</h2>
+    <div class="muted" style="margin-bottom:10px">
+      你正用 <b id="secCtxOrigin"></b>（局域网 http 地址）打开本页，浏览器的安全策略只对 localhost / HTTPS 开放麦克风。
+      以下两种方式任选其一，做完刷新本页即可语音录入：
+    </div>
+    <div style="display:flex;gap:18px;flex-wrap:wrap">
+      <div style="flex:1;min-width:280px;border:1px solid #f59e0b;border-radius:8px;padding:10px 12px">
+        <b>方式一：Chrome 开关（约 30 秒，这台设备一次）</b>
+        <ol style="margin:8px 0 0;padding-left:20px;line-height:1.9">
+          <li>Chrome 地址栏输入 <code>chrome://flags/#unsafely-treat-insecure-origin-as-secure</code></li>
+          <li>在输入框填入
+            <button class="ghost" style="min-height:0;padding:2px 10px;font-size:12px" onclick="copySecOrigin(this)">复制</button>
+            <code id="secCtxUrl" style="word-break:break-all"></code></li>
+          <li>右侧下拉选 <b>Enabled</b> → 点底部 <b>Relaunch</b> 重启浏览器</li>
+          <li>重新打开本页 → 点「开始语音录入」→ 允许麦克风</li>
+        </ol>
+      </div>
+      <div style="flex:1;min-width:280px;border:1px solid var(--bd);border-radius:8px;padding:10px 12px">
+        <b>方式二：安装证书（一次，永久生效）</b>
+        <ol style="margin:8px 0 0;padding-left:20px;line-height:1.9">
+          <li><a id="secCtxCaLink" href="/ca.crt">点此下载 ca.crt</a>，下载后点开文件按向导安装（问用途选"VPN 和应用"）</li>
+          <li>改用 <code id="secCtxHttps"></code> 打开本页（注意端口 <b>15433</b>）</li>
+          <li>允许麦克风即可</li>
+        </ol>
+      </div>
+    </div>
+  </div>
+
   <!-- 初始化状态 -->
   <div class="panel">
     <h2>1. 表初始化状态 <small style="color:#71717a">（打开页面自动逐表检查导入；也可在下方选表后点「导入当前表」手动导入）</small></h2>
@@ -95,12 +125,40 @@
         <select id="tableSel" onchange="onSwitchTable()"></select>
       </label>
       <button class="ghost" id="importBtn" onclick="importCurrentTable()" title="把本页当前表的行/列定义上传到后端并重建向量库">导入当前表</button>
+      <button class="ghost" id="h5Btn" onclick="toggleH5Panel()" title="粘贴实际 H5 页面的表格 HTML，导入后即可语音验证">导入 H5 表格</button>
       <button class="primary" id="voiceBtn" disabled onclick="onVoiceButton()">开始语音录入</button>
       <div id="levelWrap" style="display:none;width:90px;height:8px;background:#e4e4e7;border-radius:4px;overflow:hidden" title="麦克风输入电平"><div id="levelBar" style="width:0%;height:100%;background:#22c55e;transition:width .1s"></div></div>
       <span id="voiceHint" class="muted"></span>
     </div>
     <div style="margin-top:12px" id="live">…</div>
     <div style="margin-top:8px" class="muted">语音累计：<span id="accum">（暂无，点“开始语音录入”后显示）</span></div>
+  </div>
+
+  <!-- H5 表格导入：快速验证实际场景表格 -->
+  <div class="panel" id="h5Panel" style="display:none">
+    <h2>导入 H5 表格 <small style="color:#71717a">（把实际页面的表格灌进网关，验证语音录入效果）</small></h2>
+    <div class="muted" style="margin-bottom:8px">
+      把实际 H5 页面的表格 HTML 粘贴到下面（整页源码或 <table>…</table> 片段均可，取第一个 table），或选择 .html 文件。
+      解析规则：每个数据行的<strong>第一列 = 行标签</strong>（检验内容），列数 = 数据列数；首行含 th 自动识别为表头（可手动覆盖）。
+      语音说法：<strong>行标签 + X号</strong>（如「壁厚一号二点八」）。导入成功后自动选中该表，直接点「开始语音录入」验证。
+    </div>
+    <textarea id="h5Html" rows="8" style="width:100%;font-family:Consolas,monospace;font-size:13px;padding:8px"
+              placeholder="&lt;table&gt;…&lt;/table&gt; 或整页 HTML"></textarea>
+    <div class="row" style="margin-top:8px">
+      <input type="file" id="h5File" accept=".html,.htm,.txt" style="font-size:13px">
+      <label><input type="checkbox" id="h5HasHeader" onchange="onH5HeaderToggle(this)"> 第一行是表头</label>
+      <span>表名：<input id="h5Name" size="18" value="H5导入表" style="padding:8px 10px"></span>
+      <span title="后端返回规范坐标（第一个行标签=第1行）。若实际页面中该表上方还有 N 行，行偏移填 N：返回行1 → 页面第 1+N 行。
+                   用于模拟实际页面的回填位置，本页表格也会按偏移渲染">
+        行偏移：<input id="h5RowOff" type="number" value="0" style="width:72px;padding:8px">
+      </span>
+      <span title="后端返回规范坐标（第一个数据列=第1列）。若实际页面中该表左侧还有 N 列，列偏移填 N：返回列1 → 页面第 1+N 列。">
+        列偏移：<input id="h5ColOff" type="number" value="0" style="width:72px;padding:8px">
+      </span>
+      <button class="ghost" style="min-height:0;padding:8px 14px" onclick="parseH5Preview()">解析预览</button>
+      <button class="primary" style="min-height:0;padding:8px 14px" id="h5ImportBtn" onclick="importH5Table()" disabled>导入并验证</button>
+    </div>
+    <div id="h5Preview" class="muted" style="margin-top:8px;white-space:pre-wrap">（尚未粘贴 HTML）</div>
   </div>
 
   <!-- 表格 -->
@@ -200,7 +258,7 @@ function importTable(t) {
 }
 
 function renderChips() {
-  $('chips').innerHTML = TABLES.map((t, i) => {
+  $('chips').innerHTML = allTables().map((t, i) => {
     const s = tableState[i]
     const cls = s === 'ready' ? 'ok' : s === 'error' ? 'err' : (s === 'busy' || s === 'checking') ? 'busy' : ''
     const txt = s === 'ready' ? '已就绪 ✓' : s === 'busy' ? '处理中…' : s === 'error' ? '失败 ✗'
@@ -255,7 +313,7 @@ async function initAllTables(isRetry) {
     renderChips()
   }
 
-  log(`全部 ${TABLES.length} 张表初始化完成`, 's')
+  log(`全部 ${allTables().length} 张表初始化完成`, 's')
   $('voiceBtn').disabled = false
   $('voiceHint').textContent = ''
   btn.disabled = false
@@ -265,8 +323,8 @@ async function initAllTables(isRetry) {
    后端已有该表时会重建/覆盖；初始化自动流程失败时用它兜底重试。 */
 async function importCurrentTable() {
   if (mic && mic.active) { log('请先结束当前录音再导入表', 'e'); return }
-  const i = TABLES.findIndex(t => t.name === $('tableSel').value)
-  const t = TABLES[i]
+  const i = allTables().findIndex(t => t.name === $('tableSel').value)
+  const t = allTables()[i]
   const btn = $('importBtn')
   btn.disabled = true
   tableState[i] = 'busy'; renderChips()
@@ -282,19 +340,127 @@ async function importCurrentTable() {
   btn.disabled = false
 }
 
+/* ========================= 1.5 导入 H5 表格（快速验证实际场景表格） =========================
+   把实际 H5 页面的 <table> 解析成 {rows:[行标签], columnCount}，POST /import_table 后动态加入表列表。
+   解析、偏移设置全部在本页完成，与后端无关：后端仍只收 rows/columnCount 并按规范坐标返回。 */
+let H5_TABLES = []                       // 动态导入的表，与内置 TABLES 拼接使用（initAllTables 也会覆盖检查它们）
+const allTables = () => TABLES.concat(H5_TABLES)
+
+function toggleH5Panel() {
+  const p = $('h5Panel')
+  p.style.display = p.style.display === 'none' ? '' : 'none'
+}
+
+/* 「第一行是表头」勾选框：null=自动检测（首行含 th 即表头），1/0=用户手动指定 */
+let h5HeaderOverride = null
+function onH5HeaderToggle(cb) {
+  h5HeaderOverride = cb.checked ? 1 : 0
+  parseH5Preview()
+}
+
+$('h5File').addEventListener('change', async (e) => {
+  const f = e.target.files[0]
+  if (!f) return
+  $('h5Html').value = await f.text()
+  h5HeaderOverride = null
+  $('h5Name').value = f.name.replace(/\.(html?|txt)$/i, '') || 'H5导入表'
+  parseH5Preview()
+})
+/* 粘贴/编辑后失焦自动重新预览；换内容重置表头覆盖 */
+$('h5Html').addEventListener('change', () => { h5HeaderOverride = null; parseH5Preview() })
+
+let h5Parsed = null                      // 最近一次解析结果 {rows, columnCount, header}
+
+function parseH5Preview() {
+  const out = $('h5Preview')
+  h5Parsed = null
+  $('h5ImportBtn').disabled = true
+  const src = $('h5Html').value.trim()
+  if (!src) { out.textContent = '（尚未粘贴 HTML）'; return }
+
+  let table
+  try {
+    table = new DOMParser().parseFromString(src, 'text/html').querySelector('table')
+  } catch (e) { out.textContent = 'HTML 解析失败：' + e.message; return }
+  if (!table) { out.textContent = '未找到 <table> 元素：请粘贴包含表格的 HTML 片段或整页源码'; return }
+
+  const trs = [...table.querySelectorAll('tr')]
+  if (!trs.length) { out.textContent = '<table> 里没有任何 <tr>'; return }
+  const grid = trs.map(tr => [...tr.querySelectorAll('td,th')].map(c => c.textContent.trim()))
+
+  // 表头：勾选框覆盖 > 自动检测（首行含 th）
+  const hasHeader = h5HeaderOverride !== null ? h5HeaderOverride === 1 : trs[0].querySelector('th') !== null
+  $('h5HasHeader').checked = hasHeader
+
+  const dataGrid = hasHeader ? grid.slice(1) : grid
+  if (!dataGrid.length) { out.textContent = '没有数据行：请检查"第一行是表头"设置'; return }
+  const columnCount = Math.max(...dataGrid.map(r => r.length)) - 1   // 减去行标签列
+  const rows = dataGrid.map(r => (r[0] || '').trim()).filter(Boolean)
+  if (!rows.length || columnCount < 1) {
+    out.textContent = `解析失败：可用行标签 ${rows.length} 个、数据列数 ${columnCount}（第一列将作为行标签）`
+    return
+  }
+  const header = hasHeader ? grid[0].slice(1).slice(0, columnCount).map(s => s || '') : null
+
+  h5Parsed = { rows, columnCount, header }
+  $('h5ImportBtn').disabled = false
+  out.textContent = [
+    `表头行：${hasHeader ? '是' : '否（列将显示为 1号/2号/…）'}`,
+    `行标签 ${rows.length} 个：${rows.slice(0, 8).join('、')}${rows.length > 8 ? ' …' : ''}`,
+    `数据列数：${columnCount}`,
+  ].join('\n')
+}
+
+async function importH5Table() {
+  if (!h5Parsed) { parseH5Preview(); if (!h5Parsed) return }
+  if (mic && mic.active) { log('请先结束当前录音再导入表', 'e'); return }
+  // 表名会用作后端存储目录/键：去掉文件系统非法字符
+  const name = ($('h5Name').value.trim() || 'H5导入表').replace(/[\\/:*?"<>|]/g, '-').slice(0, 50)
+  const t = {
+    name,
+    rows: h5Parsed.rows,
+    columnCount: h5Parsed.columnCount,
+    rowOffset: parseInt($('h5RowOff').value, 10) || 0,   // 测试人员按实际页面自行设置：
+    colOffset: parseInt($('h5ColOff').value, 10) || 0,   // 后端规范坐标 → 页面坐标的固定偏移
+    header: h5Parsed.header,
+  }
+  const btn = $('h5ImportBtn'); btn.disabled = true
+  log(`导入 H5 表格「${name}」：${t.rows.length} 行 × ${t.columnCount} 列（偏移 行+${t.rowOffset}/列+${t.colOffset}）……`)
+  try {
+    const r = await importTable(t)
+    log(`「${name}」导入完成：后端 ${r.rowsCount}行×${r.colsCount}列，向量库已就绪`, 's')
+    const idx = H5_TABLES.findIndex(x => x.name === name)
+    if (idx >= 0) H5_TABLES[idx] = t
+    else { H5_TABLES.push(t); tableState.push('ready') }
+    renderTableOptions(name)
+    renderChips()
+    renderGrid()
+    $('h5Panel').style.display = 'none'
+    log(`已切换到「${name}」，点「开始语音录入」即可验证（说法：行标签 + X号）`, 's')
+  } catch (err) {
+    log(`H5 表格导入失败：${err.message}`, 'e')
+  }
+  btn.disabled = false
+}
+
 /* ========================= 2. 表格渲染与回填 ========================= */
 function currentTable() {
-  return TABLES.find(t => t.name === $('tableSel').value)
+  return allTables().find(t => t.name === $('tableSel').value)
 }
 
 function renderGrid() {
   const t = currentTable()
   $('gridTitle').textContent = `表格 — ${t.name}`
-  const colHeaders = Array.from({ length: t.columnCount }, (_, i) => `${i + 1}号`)
+  // 列头：H5 导入的表展示真实列名（仅作对照，语音仍说「X号」）；内置表显示 1号/2号…
+  const colHeaders = Array.from({ length: t.columnCount }, (_, i) =>
+    (t.header && t.header[i]) ? `${t.header[i]}<small style="color:#a1a1aa">（${i + 1}号）</small>` : `${i + 1}号`)
+  // data-r/data-c = 后端规范坐标 + 本表偏移（offset 由测试人员按实际页面设置）：
+  // 渲染与回填共用同一套坐标，设置偏移后返回结果会落在对应位置
+  const rOff = t.rowOffset || 0, cOff = t.colOffset || 0
   let html = '<tr><th>项目 \\ 位置</th>' + colHeaders.map(c => `<th>${c}</th>`).join('') + '</tr>'
   html += t.rows.map((r, ri) =>
     `<tr><td class="label">${r}</td>` +
-    Array.from({ length: t.columnCount }, (_, ci) => `<td data-r="${ri + 1}" data-c="${ci + 1}">—</td>`).join('') +
+    Array.from({ length: t.columnCount }, (_, ci) => `<td data-r="${ri + 1 + rOff}" data-c="${ci + 1 + cOff}">—</td>`).join('') +
     '</tr>').join('')
   $('grid').innerHTML = html
   loadGrid(t.name)
@@ -524,7 +690,33 @@ if (location.protocol === 'file:') {
   $('live').textContent = '⚠ 不要直接双击打开本 HTML 文件。请先运行 install.bat（或 VoiceTableAssist.exe）启动服务，再用浏览器访问 http://<网关IP>:15232/'
   log('检测到 file:// 协议：页面连不上网关。请通过 http://127.0.0.1:15232/ 访问', 'e')
 }
-$('tableSel').innerHTML = TABLES.map(t => `<option value="${t.name}">${t.name}</option>`).join('')
+
+/* 非安全上下文检测：http + 局域网 IP（非 localhost）打开时，浏览器禁用 getUserMedia。
+   弹出黄色引导面板，把 Chrome flags 要填的地址与证书下载链接自动生成好，测试人员照做即可。 */
+function copySecOrigin(btn) {
+  const url = $('secCtxUrl').textContent
+  navigator.clipboard?.writeText(url).then(() => {
+    btn.textContent = '已复制 ✓'
+    setTimeout(() => btn.textContent = '复制', 1500)
+  }).catch(() => {})
+}
+if (location.protocol === 'http:' && !window.isSecureContext
+    && !['localhost', '127.0.0.1', '[::1]'].includes(location.hostname)) {
+  const httpUrl = location.origin          // http://192.168.x.x:15232
+  const httpsUrl = `https://${location.hostname}:15433/`
+  $('secCtxOrigin').textContent = httpUrl
+  $('secCtxUrl').textContent = httpUrl
+  $('secCtxHttps').textContent = httpsUrl
+  $('secCtxPanel').style.display = ''
+  log('当前为非安全上下文（http+局域网IP）：麦克风已被浏览器禁用，见页面顶部引导面板解锁', 'e')
+}
+/* 下拉框选项：内置表 + H5 动态导入表；selected 指定选中项（缺省第一项） */
+function renderTableOptions(selected) {
+  $('tableSel').innerHTML = allTables()
+    .map(t => `<option value="${t.name}"${t.name === selected ? ' selected' : ''}>${t.name}</option>`).join('')
+}
+
+renderTableOptions()
 renderGrid()
 pollHealth()
 
