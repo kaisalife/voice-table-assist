@@ -1,4 +1,4 @@
-# ============================================================================
+﻿# ============================================================================
 # make-cert.ps1 - Self-signed local CA + gateway HTTPS certificate.
 #
 # Why: browsers expose getUserMedia (microphone) ONLY on secure contexts.

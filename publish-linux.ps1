@@ -1,4 +1,4 @@
-# 打包发布 Linux：(self-contained linux-x64) + 模型 + Linux sherpa-onnx + wwwroot，打一个 zip。
+﻿# 打包发布 Linux：(self-contained linux-x64) + 模型 + Linux sherpa-onnx + wwwroot，打一个 zip。
 #
 # 前置：Windows 上装有 .NET 8 SDK 且能对 linux-x64 交叉发布；
 #       另需准备 Linux 版 sherpa-onnx（官方 release 的 sherpa-onnx-vX-linux-x64.tar.bz2)，
