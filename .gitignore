@@ -1,5 +1,11 @@
 # 模型与运行时资产（体积大，不入库）
-models/
+models/*
+# 例外：GTCRN 工厂噪声降噪模型 523 KiB（sherpa-onnx 官方 Apache-2.0 预训练），
+# 体积小且服务默认启用，整包随仓库分发免去首次部署单独拉取。
+# 下载源：https://github.com/k2-fsa/sherpa-onnx/releases/tag/speech-enhancement-models
+# 注：unignore 必须同时打开父目录链（models/ -> models/asr/），否则父目录的忽略会级联屏蔽子文件。
+!models/asr/
+!models/asr/gtcrn_simple.onnx
 
 # VC++ Redistributable 安装包（第三方二进制，随部署包带，不入库）
 vc_redist.x64.exe

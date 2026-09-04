@@ -2,12 +2,14 @@
 
 > **源码地址**：<https://github.com/kaisalife/voice-table-assist>
 >
-> GitHub 仓库**不包含** `models/` 目录（模型文件体积较大，不纳入 Git 版本管理）。
-> **模型使用 ModelScope CLI 一键下载**（需先 `pip install modelscope`）：
+> GitHub 仓库**不包含** `models/{raner,embedding,asr/sherpa-onnx-streaming-zipformer-zh-*}`（体积大，不纳入 Git 版本管理）。
+> **这些模型使用 ModelScope CLI 一键下载**（需先 `pip install modelscope`）：
 > ```
 > modelscope download --model yanxiashuiyun/VoiceTableAssist --local_dir .
 > ```
 > 把 `local_dir` 指向本仓库中的 `app/VoiceTableAssist/` 目录，即可在该目录下生成 `models/` 子目录（与 README 中目录结构完全一致）。
+>
+> **例外**：`models/asr/gtcrn_simple.onnx`（工厂噪声 GTCRN 降噪，523 KiB）随仓库分发（已在 `.gitignore` 中精确放行），免去首次部署单独拉取。
 
 把三部分合并为一个**单进程、单端口(15232)** 的自包含服务包：
 `sherpa-onnx`(本地离线流式 ASR) + `text_to_json`(进程内 RaNER + gte-base-zh) + `backend`(WebSocket/语音资源热切网关)。
@@ -73,12 +75,14 @@ app/VoiceTableAssist/
 ```
 
 > 模型与 sherpa 二进制不编入编译产物：`models/`、`sherpa-onnx/` 由 `publish.bat` 从仓库源拷贝到发布目录。
-> **注意**：GitHub 仓库 <https://github.com/kaisalife/voice-table-assist> **不含 `models/` 目录**。首次克隆后，先在 `app/VoiceTableAssist/` 目录下执行：
+> **注意**：GitHub 仓库 <https://github.com/kaisalife/voice-table-assist> **不含 `models/{raner,embedding,asr/streaming-zipformer-*}`**（大体积模型）。首次克隆后，先在 `app/VoiceTableAssist/` 目录下执行：
 > ```
 > pip install modelscope
 > modelscope download --model yanxiashuiyun/VoiceTableAssist --local_dir .
 > ```
 > 完成后即得到 `app/VoiceTableAssist/models/`，再构建或运行；完整部署包（已含模型）仍由 `publish.bat` 生成。
+>
+> 例外：`models/asr/gtcrn_simple.onnx`（523 KiB 工厂噪声 GTCRN 降噪）随仓库分发，免去单独下载。
 
 ## 多表数据布局（运行期自动生成）
 
@@ -105,10 +109,10 @@ sherpa-onnx/hr/tables/
 git clone https://github.com/kaisalife/voice-table-assist.git
 cd voice-table-assist/app/VoiceTableAssist
 
-# 2) 补齐 models 目录（GitHub 仓库不含模型，使用 ModelScope CLI 一键下载）
+# 2) 补齐大模型目录（GTCRN 降噪模型已随仓库，无需再下；其余用 ModelScope CLI）
 pip install modelscope
 modelscope download --model yanxiashuiyun/VoiceTableAssist --local_dir .
-#    完成后当前目录下出现 models/{raner, embedding, asr}，再继续构建
+#    完成后当前目录下出现 models/{raner, embedding, asr/streaming-zipformer-*}（gtcrn_simple.onnx 已在仓库里，无需下载），再继续构建
 
 # 3) 构建
 dotnet build -c Release
