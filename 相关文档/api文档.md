@@ -1,12 +1,5 @@
 # VoiceTableAssist API 文档——接口说明
 
-> 依据现有实现整理，供前端、后端调用方及部署验收使用。
->
-> **源码地址**：<https://github.com/kaisalife/voice-table-assist>
->
-> GitHub 仓库**不含 models**；网关源码构建前请先在 `app/VoiceTableAssist/` 中执行：
-> `pip install modelscope && modelscope download --model yanxiashuiyun/VoiceTableAssist --local_dir .`
-
 ## 一、概述
 
 **VoiceTableAssist** 为单进程、单端口（`15232`）语音/表格服务。HTTP 与 WebSocket 协议均基于 JSON；WebSocket 地址为 `/api/speech/asr/stream`。
@@ -480,11 +473,3 @@
 WS 流式识别从「裸 ASR 通道」升级为交互即服务：文本合并、静默判定、RaNER 解析全部下沉到服务端（`Asr/VoiceInteractionSession.cs`），每条连接独立会话，下行已串行化。
 
 ---
-
-## 末、存疑点
-
-1. `Models:IdleUnloadSeconds` 随包配置为 `180`，代码默认 `30`，是否需要在文档中统一为单一默认值？
-2. WebSocket 单连接模式下，握手同步激活大表索引的耗时上限是否需要给出明确阈值或超时配置？
-3. `accumulated` 字段主要面向调试，是否应在前端生产代码中依赖该字段做业务逻辑？
-4. 懒加载模式下首次语音连接 8~10s 的冷启动耗时，是否需在前端给出更明确的 loading 提示文案？
-5. 错误码 `503` 的具体触发条件（sherpa 子进程启动失败重试策略）是否需要在文档中补充？
