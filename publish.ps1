@@ -41,7 +41,7 @@ $gtcrn = Join-Path $publish 'models\asr\gtcrn_simple.onnx'
 if (Test-Path $gtcrn) {
     $kb = [math]::Round((Get-Item $gtcrn).Length / 1KB)
     Write-Host "==> GTCRN 降噪模型已随包：models\asr\gtcrn_simple.onnx ($kb KB)"
-    Write-Host '    默认启用：appsettings.json <- AsrProvider.Denoise.Enabled = true'
+    Write-Host '    工厂噪声场景启用：appsettings.json <- AsrProvider.Denoise.Enabled = true（默认 false）'
 } else {
     Write-Warning 'GTCRN 模型未随包：models\asr\gtcrn_simple.onnx'
     Write-Warning '  工厂噪声场景建议补上：https://github.com/k2-fsa/sherpa-onnx/releases/download/speech-enhancement-models/gtcrn_simple.onnx'

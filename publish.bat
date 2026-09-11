@@ -116,7 +116,7 @@ if exist "%PUBLISH%models\asr\gtcrn_simple.onnx" (
         set /a GTCRN_SIZE_KB=%%~zF / 1024 >NUL
     )
     echo        OK     GTCRN 降噪模型已随包：models\asr\gtcrn_simple.onnx ^(!GTCRN_SIZE_KB! KB^)
-    echo                默认启用：appsettings.json ^<- AsrProvider.Denoise.Enabled = true
+    echo                工厂噪声场景启用：appsettings.json ^<- AsrProvider.Denoise.Enabled = true（默认 false）
     echo                详见 部署文档.md 第十一节 GTCRN 工厂噪声降噪
 ) else (
     echo        WARN   GTCRN 模型未找到：models\asr\gtcrn_simple.onnx
