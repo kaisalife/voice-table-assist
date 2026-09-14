@@ -1,0 +1,35 @@
+# ============================================================================
+# 安卓化方案 —— 只提交源码；构建/打包产物与模型资产一律不跟踪
+# ============================================================================
+
+# ---- 构建 / 打包产物 ----
+build/
+build-*/
+build-apk/
+build-host/
+build-x86/
+build-x86_64/
+build-arm64-v8a/
+.externalNativeBuild/
+.cxx/
+*.so
+!jni/**/CMakeLists.txt
+android/app/assets/
+android/.cxx/
+android/build/
+dist/*.apk
+dist/*.apk.idsig
+dist/*-vta-service
+dist/*.f32
+dist/*/
+
+# ---- 第三方依赖（体积大，按需拉取）----
+third_party/
+
+# ---- 模型 / 运行时资产：全部不跟踪 ----
+# 由 scripts/copy_models.ps1 从仓库根 models/ 拷贝生成：
+#   android/assets/models/{asr,embedding,raner,sherpa-onnx/hr}
+# 并含临时导出物（export-int8*）等。
+android/assets/models/
+assets/models/
+models/

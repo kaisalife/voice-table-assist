@@ -37,4 +37,7 @@ wwwroot/ca.crt
 # 日志
 *.log
 
+# 编辑器本地配置（含本机绝对路径）
+.vscode/
+
 .kilo/

@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- VTA Native Service stub APK（方案 §6.3/§7.2）
+     仅含 <service> 配置与 native 库加载，不带 UI（UI 归企业 App）。
+     自定义 signature 级 permission 锁调用方：只有同签名 App 才能 bind。 -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="com.vta.service">
+
+    <!-- 采音权限：Native Service 自主采音（captureMode=0）所需；
+         运行时授予由 stub APK 的引导页或 adb shell pm grant 完成（见 README）。 -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+    <!-- 调用方锁定：signature 级，同签名企业 App 才能声明 -->
+    <permission
+        android:name="com.vta.permission.BIND"
+        android:protectionLevel="signature" />
+
+    <application
+        android:label="Voice Table Assist Native Service"
+        android:allowBackup="false"
+        android:extractNativeLibs="true">
+
+        <!-- Native Service：exported=true（企业 App 跨进程调必须），
+             权限锁调用方；START_STICKY 尽量复活（方案 §5.7）。 -->
+        <service
+            android:name=".VtaNativeService"
+            android:exported="true"
+            android:permission="com.vta.permission.BIND"
+            android:foregroundServiceType="microphone">
+            <intent-filter>
+                <action android:name="com.vta.START_SERVICE" />
+            </intent-filter>
+        </service>
+
+        <!-- 前台常驻通知（避免 Doze 杀进程，方案 §9.1）-->
+        <service
+            android:name=".VtaForegroundKeeper"
+            android:exported="false" />
+    </application>
+</manifest>
