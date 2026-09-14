@@ -68,14 +68,6 @@ struct VtaConfig {
     std::string charPinyinPath = "models/sherpa-onnx/hr/hr_char_pinyin.txt";  // 拼音字典（表内读音对齐用）
     std::string defaultTable = "default";  // Tables:DefaultTable
 
-    // 单活动表模型：导入多张表共存，同一时刻只服务一张（用到哪张用哪张的数据）。
-    // maxSessions 默认 1 = 单活动表（两个客户端同时语音时后者 409）；
-    // 如需多路并发监听（非当前目标）可调大，但表数据仍按会话绑定。
-    int maxSessions = 1;
-    // 采音路由语义（maxSessions>1 时才有意义）：
-    // true=同一份 PCM 广播给所有 captureMode=0 会话；false=仅最近打开的会话独占麦克风
-    bool broadcastCapture = true;
-
     // 从 filesDir/vta/vta.json 读取覆盖项（缺文件/缺键用默认值）
     static VtaConfig Load(const std::string& baseDir);
 };

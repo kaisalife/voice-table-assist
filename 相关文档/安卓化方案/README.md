@@ -59,8 +59,8 @@
 | 下行 `partial` | 50~100ms 轮询 `getState` → `SessionState.partial` |
 | 下行 `final` + `cells` | `pollCells(sessionId)` → `CellHit[]` |
 | `{"type":"stop"}` | `closeSession(sessionId)`（flush 降噪/识别 + fold partial + 提交） |
-| 409 单连接门卫 | `openSession` 返回 409（per-client 一路 + 全局 maxSessions） |
-| 连接断开 | `linkToDeath` → 自动 close 该 client 全部会话 |
+| 重复 `openSession` | 幂等：自动关闭旧会话（含静默提交）再开新的（单会话模型：一个麦克风 = 一路） |
+| 连接断开（AIDL 路线） | `linkToDeath` → 自动 close 活动会话；进程内路线（C ABI/`NativeBridge`）共进程，无此问题 |
 
 差异修订（对方案草稿的两处落定）：
 1. `openSession` 增加第 4 参 `@nullable IBinder client`——binder 死亡通知需要客户端 binder 才能注册，
@@ -114,7 +114,7 @@ Soong 路线（设备端正式形态）用 `Android.bp`：`mm -B` 于本目录�
 | 用到哪张用哪张 | 会话打开时**快照该表的索引**（`shared_ptr<const VtxIndex>`）+ 按该表行标签构建**读音吸附词表** + 按该表生成**热词串** |
 | 识别器常驻不重建 | 识别器**不含任何表相关状态**：热词用 sherpa 的 `CreateStream(本表热词串)` **按流传入**，切表/导入都不重建（实测：第 1 张表装载、第 2 张表 0 重建） |
 | 导入即生效 | 导入只做"建索引 + 落盘 + 注册"；新表在下一次 `openSession` 自动生效（热词/吸附词表按表实时生成） |
-| 并发上限 | `maxSessions` 默认 1（单活动表）；同 client 同表只允许一路 |
+| 单会话模型 | 一个物理麦克风 = 同一时刻一路识别；重复 `openSession` 幂等（自动关旧开新），换表即换会话 |
 | 识别器重建安全 | 即便强制重建识别器，**在跑会话持有旧识别器**（共享所有权），识别流不悬空（已实测） |
 
 **验收命令**（设备端）：
@@ -251,14 +251,14 @@ adb shell "cd /data/local/tmp/vta && /data/local/tmp/vta-service --selftest mode
   "silenceMs": 300,
   "maxChars": 500,
   "minSim": 0.55,
-  "denoiseEnabled": false,
-  "maxSessions": 1
+  "denoiseEnabled": false
 }
 ```
 
 ## 未决项（方案 §9.2，代码已按默认值落地）
 
-- 多路并发上限：`maxSessions` 默认 1（8GB 平板）；12GB+ 可调 2。
 - 打包哪些表：`assets/models/embedding/tables/` 按需增删。
-- HR 规则更新策略：当前随 APK（重导表即重生成）；热加载已支持（重导触发识别器重建）。
+- 接入形态：主应用（C#+H5）采用进程内 C ABI + DllImport（见《安卓化方案接口适配文档.md》）；
+  独立 stub APK + AIDL 的 Service 壳（`VtaNativeService`/`VtaForegroundKeeper`）未实现，
+  需要时再补。
 - 部署形态：单 APK 暴露 service（signature 权限锁）；内嵌企业 App 待集成方确认。

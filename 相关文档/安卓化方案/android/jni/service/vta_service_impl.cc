@@ -1,8 +1,5 @@
-// jni/service/vta_service_impl.cc —— AIDL 服务端实现
+// jni/service/vta_service_impl.cc —— 语音表格服务实现（单会话模型）
 #include "vta_service_impl.h"
-
-#include <algorithm>
-#include <optional>
 
 #include "../common/log.h"
 #include "../common/strings.h"
@@ -17,38 +14,35 @@ namespace aidl = aidl::com::vta;
 
 namespace {
 
-VtaServiceImpl* g_serviceInstance = nullptr;
+VtaServiceImpl* g_instance = nullptr;
 AIBinder_DeathRecipient* g_deathRecipient = nullptr;
 
 void DeathCb(void* cookie) {
-    // cookie = ClientKey*（openSession 时 new，会话全清后 delete）
+    // cookie = client AIBinder*（openSession 时 linkToDeath 登记）
     ALOGW("[BINDER] client 死亡，回收其会话 cookie=%p", cookie);
-    if (g_serviceInstance != nullptr) g_serviceInstance->OnBinderDied(cookie);
+    if (g_instance != nullptr) g_instance->OnBinderDied(cookie);
 }
 
 AIBinder_DeathRecipient* GetDeathRecipient() {
     if (g_deathRecipient == nullptr) g_deathRecipient = AIBinder_DeathRecipient_new(DeathCb);
     return g_deathRecipient;
 }
+
 }  // namespace
 
-// ClientKey：client 生命周期 cookie（death recipient / 会话归属共用）
-struct ClientKey {
-    explicit ClientKey(VtaServiceImpl* s) : svc(s) {}
-    VtaServiceImpl* svc;
-};
+VtaServiceImpl* VtaServiceImpl::g_instance = nullptr;  // 采音回调路由用（静态成员定义）
 
 VtaServiceImpl::VtaServiceImpl(const VtaConfig& config) : config_(config) {
-    g_serviceInstance = this;
+    g_instance = this;
     denoiseEnabled_ = config.denoiseEnabled;
     host_ = std::make_unique<EngineHost>(config);
 }
 
 VtaServiceImpl::~VtaServiceImpl() {
-    if (g_serviceInstance == this) g_serviceInstance = nullptr;
+    if (g_instance == this) g_instance = nullptr;
     std::lock_guard<std::mutex> lk(mu_);
-    sessions_.clear();
-    clients_.clear();
+    active_.reset();
+    drainedCells_.clear();
 }
 
 bool VtaServiceImpl::Init(std::string* err) {
@@ -58,18 +52,6 @@ bool VtaServiceImpl::Init(std::string* err) {
           config_.tablesBaseDir.c_str());
     (void)err;
     return true;
-}
-
-// ---- 生命周期 ----
-
-::ndk::ScopedAStatus VtaServiceImpl::getVersion(int32_t* _aidl_return) {
-    *_aidl_return = 1;
-    return ::ndk::ScopedAStatus::ok();
-}
-
-::ndk::ScopedAStatus VtaServiceImpl::health(std::string* _aidl_return) {
-    *_aidl_return = healthState_;
-    return ::ndk::ScopedAStatus::ok();
 }
 
 // ---- 表结构（测试页渲染用）----
@@ -102,6 +84,16 @@ std::string VtaServiceImpl::DescribeTable(const std::string& tableName) {
 }
 
 // ---- 表格管理 ----
+
+::ndk::ScopedAStatus VtaServiceImpl::getVersion(int32_t* _aidl_return) {
+    *_aidl_return = 1;
+    return ::ndk::ScopedAStatus::ok();
+}
+
+::ndk::ScopedAStatus VtaServiceImpl::health(std::string* _aidl_return) {
+    *_aidl_return = healthState_;
+    return ::ndk::ScopedAStatus::ok();
+}
 
 ::ndk::ScopedAStatus VtaServiceImpl::listTables(std::vector<aidl::TableInfo>* _aidl_return) {
     _aidl_return->clear();
@@ -155,8 +147,8 @@ std::string VtaServiceImpl::DescribeTable(const std::string& tableName) {
         return ::ndk::ScopedAStatus::ok();
     }
     // 导入即完成：向量索引 + registry 落盘。语音侧不需要重建任何资源——
-    //   热词已移除；同音纠错靠"表内读音吸附"，而吸附词表是**会话打开时按该表实时构建**的，
-    //   所以新导入的表下一次 openSession 自动生效（零重建、零额外工作）。
+    //   行标签热词按会话即时构建；同音纠错靠"表内读音吸附"，吸附词表是**会话打开时按该表
+    //   实时构建**的，所以新导入的表下一次 openSession 自动生效（零重建、零额外工作）。
     std::string key = manager_->ResolveTargetKey(name);
     ALOGI("[IMPORT] 表 %s(key=%s)：%d行x%d列 %d条向量（下次 openSession 即生效）", name.c_str(),
           key.c_str(), summary.rowsCount, summary.colsCount, summary.entries);
@@ -164,19 +156,14 @@ std::string VtaServiceImpl::DescribeTable(const std::string& tableName) {
     return ::ndk::ScopedAStatus::ok();
 }
 
-// ---- 语音会话 ----
+// ---- 语音会话（单会话：一个麦克风 = 一路）----
 
-int VtaServiceImpl::OpenSessionLocked(const std::string& tableName, int silenceMs, int captureMode,
-                                      ClientKey* clientKey) {
+int VtaServiceImpl::OpenSessionLocked(const std::string& tableName, int silenceMs, int captureMode) {
+    // 调用方须持 mu_
     if (captureMode != 0 && captureMode != 1) return kErrInvalid;
 
     std::string key = manager_->ResolveTargetKey(tableName);
     if (key.empty()) return kErrInvalid;  // 表未注册
-
-    // 并发门卫：同一 client 同一张表只能一路（不同表可各开一路）；
-    // 全局并发上限 maxSessions（多表并发时按内存预算配置，默认 4）
-    ClientRecord& client = clients_[clientKey];
-    if (static_cast<int>(sessions_.size()) >= config_.maxSessions) return kErrConflict;
 
     // 懒加载：首次 openSession 时装载引擎/识别器（progress 走 health 状态）
     std::string err;
@@ -191,16 +178,9 @@ int VtaServiceImpl::OpenSessionLocked(const std::string& tableName, int silenceM
         return kErrNotReady;
     }
     healthState_ = "ok";
-    // 取该表索引快照（共享所有权）：多表并发时其他会话切表不会让本会话悬空
+    // 取该表索引快照（共享所有权）：与向量检索同一份，切表不会让本会话悬空
     std::shared_ptr<const VtxIndex> index = manager_->Activate(key);
     if (index == nullptr) return kErrInvalid;
-
-    // 并发门卫：同一 client 同一张表只能一路（不同表可各开一路）
-    for (int sid : client.sessionIds) {
-        auto it = sessions_.find(sid);
-        if (it != sessions_.end() && it->second->tableKey == key) return kErrConflict;
-    }
-    if (static_cast<int>(sessions_.size()) >= config_.maxSessions) return kErrConflict;
 
     VoiceSessionConfig cfg;
     cfg.tableName = tableName;
@@ -213,20 +193,18 @@ int VtaServiceImpl::OpenSessionLocked(const std::string& tableName, int silenceM
     cfg.hotwordDigits = config_.hotwordDigits;
     cfg.hotwordDigitTen = config_.hotwordDigitTen;
 
-    // 表内读音吸附：会话只需该表的索引 + 读音词表
     int id = nextSessionId_++;
-    auto record = std::make_unique<SessionRecord>();
-    record->id = id;
-    record->client = clientKey;
-    record->tableKey = key;
-    record->session =
-        VoiceSession::CreateAndStart(id, cfg, host_.get(), index, &err);
-    if (record->session == nullptr) {
+    auto session = VoiceSession::CreateAndStart(id, cfg, host_.get(), index, &err);
+    if (session == nullptr) {
         ALOGW("[SESSION] 打开会话失败: %s", err.c_str());
         return kErrInternal;
     }
-    sessions_[id] = std::move(record);
-    client.sessionIds.push_back(id);
+    Active a;
+    a.id = id;
+    a.tableKey = key;
+    a.tableName = tableName;
+    a.session = std::move(session);
+    active_ = std::move(a);
     host_->OnSessionOpened();
 
     // captureMode=0：确保采音在跑（权限在原生层解决；失败则要求改用 pushPcm 模式）
@@ -236,71 +214,100 @@ int VtaServiceImpl::OpenSessionLocked(const std::string& tableName, int silenceM
             [](const float* s, int n) { VtaServiceImpl::RouteCapturedAudio(s, n); }, &capErr);
         if (!ok) {
             ALOGW("[CAPTURE] 启动失败: %s（可改用 captureMode=1 pushPcm）", capErr.c_str());
-            CloseSessionInternal(id);
-            return kErrNotReady;
+            CloseActiveLocked();
+            return kErrInternal;
         }
     }
     return id;
+}
+
+void VtaServiceImpl::CloseActiveLocked() {
+    // 调用方须持 mu_；Close() 阻塞收尾（flush + 提交），不持 mu_
+    if (!active_) return;
+    AIBinder* client = active_->client;
+    bool linked = active_->linked;
+    int id = active_->id;
+    auto session = active_->session;
+    active_.reset();
+
+    if (session) {
+        session->Close();
+        // 排空收尾 flush 产生的最后一批 cells，转入 drained 缓冲供下一次 pollCells 取走
+        auto rest = session->PollCells(1 << 20, 0);
+        if (!rest.empty()) drainedCells_[id] = std::move(rest);
+    }
+    if (linked && client != nullptr) AIBinder_unlinkToDeath(client, GetDeathRecipient(), client);
+    StopCaptureIfIdle();
+}
+
+void VtaServiceImpl::StopCaptureIfIdle() {
+    // 调用方须持 mu_：无 captureMode=0 的活动会话就停采音（省电）
+    if (!active_ || active_->session == nullptr || active_->session->CaptureMode() != 0)
+        AudioCapture::Stop();
 }
 
 ::ndk::ScopedAStatus VtaServiceImpl::openSession(const std::string& tableName, int32_t silenceMs,
                                                  int32_t captureMode,
                                                  const ::ndk::SpAIBinder& client,
                                                  int32_t* _aidl_return) {
-    ClientKey* key = new ClientKey(this);
-    bool linked = false;
-    if (client.get() != nullptr) {
-        // binder 断开 → 自动 close 该 client 全部会话（方案 §8.4）
-        if (AIBinder_linkToDeath(client.get(), GetDeathRecipient(), key) == STATUS_OK) linked = true;
+    int sid = 0;
+    {
+        std::lock_guard<std::mutex> lk(mu_);
+        sid = OpenSessionLocked(tableName, silenceMs, captureMode);
+        if (sid <= 0) { *_aidl_return = sid; return ::ndk::ScopedAStatus::ok(); }
+        // AIDL 路线：登记 client 死亡通知（进程内路线 client 为空，跳过）
+        if (client.get() != nullptr) {
+            AIBinder* raw = client.get();
+            if (AIBinder_linkToDeath(raw, GetDeathRecipient(), raw) == STATUS_OK) {
+                active_->client = raw;
+                active_->linked = true;
+            }
+        }
     }
-    std::lock_guard<std::mutex> lk(mu_);
-    *_aidl_return = OpenSessionLocked(tableName, silenceMs, captureMode, key);
-    if (*_aidl_return <= 0) {
-        // 失败路径：清掉可能残留的空 client 登记（含 capture 启动失败已清的情形）
-        auto it = clients_.find(key);
-        if (it != clients_.end() && it->second.sessionIds.empty()) clients_.erase(it);
-        if (linked) AIBinder_unlinkToDeath(client.get(), GetDeathRecipient(), key);
-        delete key;
-    }
+    *_aidl_return = sid;
     return ::ndk::ScopedAStatus::ok();
 }
 
 ::ndk::ScopedAStatus VtaServiceImpl::pushPcm(int32_t sessionId, const aidl::PcmFrame& frame,
                                              int32_t* _aidl_return) {
-    std::shared_ptr<SessionRecord> rec;
+    std::shared_ptr<VoiceSession> session;
     {
         std::lock_guard<std::mutex> lk(mu_);
-        auto it = sessions_.find(sessionId);
-        if (it == sessions_.end()) { *_aidl_return = kErrInvalid; return ::ndk::ScopedAStatus::ok(); }
-        rec = it->second;
+        if (!active_ || active_->id != sessionId) {
+            *_aidl_return = kErrInvalid;
+            return ::ndk::ScopedAStatus::ok();
+        }
+        session = active_->session;
     }
-    if (rec->session->CaptureMode() != 1) { *_aidl_return = kErrInvalid; return ::ndk::ScopedAStatus::ok(); }
-    // 单块上限 4096 样本（256ms）：高频小块比低频大块更省 binder 事务（方案 §9.1）
+    if (session->CaptureMode() != 1) { *_aidl_return = kErrInvalid; return ::ndk::ScopedAStatus::ok(); }
+    // 单块上限 4096 样本（256ms）：高频小块比低频大块更省传输（方案 §9.1）
     size_t n = frame.samples.size();
     if (n == 0) { *_aidl_return = kOk; return ::ndk::ScopedAStatus::ok(); }  // 空块不崩
     if (n > 4096) { *_aidl_return = kErrInvalid; return ::ndk::ScopedAStatus::ok(); }
-    rec->session->PushPcm(frame.samples.data(), n);
+    session->PushPcm(frame.samples.data(), n);
     *_aidl_return = kOk;
     return ::ndk::ScopedAStatus::ok();
 }
 
 ::ndk::ScopedAStatus VtaServiceImpl::getState(int32_t sessionId,
                                               aidl::SessionState* _aidl_return) {
-    std::shared_ptr<SessionRecord> rec;
+    std::shared_ptr<VoiceSession> session;
+    std::string tableName;
     {
         std::lock_guard<std::mutex> lk(mu_);
-        auto it = sessions_.find(sessionId);
-        if (it != sessions_.end()) rec = it->second;
+        if (active_ && active_->id == sessionId) {
+            session = active_->session;
+            tableName = active_->tableName;
+        }
     }
-    if (!rec) {
-        _aidl_return->sessionId = sessionId;
+    _aidl_return->sessionId = sessionId;
+    if (!session) {
         _aidl_return->phase = "closed";
         _aidl_return->lastPartialMs = 0;
         return ::ndk::ScopedAStatus::ok();
     }
-    auto st = rec->session->GetState();
-    _aidl_return->sessionId = sessionId;
-    _aidl_return->tableName = rec->session->TableName();
+    auto st = session->GetState();
+    _aidl_return->tableName = tableName;
     _aidl_return->phase = st.phase;
     _aidl_return->partial = st.partial;
     _aidl_return->lastPartialMs = st.lastPartialMs;
@@ -312,10 +319,9 @@ int VtaServiceImpl::OpenSessionLocked(const std::string& tableName, int silenceM
     std::vector<CellHitInternal> hits;
     {
         std::lock_guard<std::mutex> lk(mu_);
-        auto it = sessions_.find(sessionId);
-        if (it != sessions_.end()) {
-            // PollCells 最多等 250ms（阻塞拉取但不拖死 binder 调用）
-            hits = it->second->session->PollCells(maxN > 0 ? maxN : 16, 250);
+        if (active_ && active_->id == sessionId) {
+            // PollCells 最多等 250ms（阻塞拉取但不拖死调用方）
+            hits = active_->session->PollCells(maxN > 0 ? maxN : 16, 250);
         } else {
             // 会话已关闭：返回 closeSession 收尾时排出的剩余 cells（一次性）
             auto dit = drainedCells_.find(sessionId);
@@ -340,21 +346,14 @@ int VtaServiceImpl::OpenSessionLocked(const std::string& tableName, int silenceM
 }
 
 ::ndk::ScopedAStatus VtaServiceImpl::closeSession(int32_t sessionId, int32_t* _aidl_return) {
-    std::shared_ptr<SessionRecord> rec;
     {
         std::lock_guard<std::mutex> lk(mu_);
-        auto it = sessions_.find(sessionId);
-        if (it == sessions_.end()) { *_aidl_return = kErrInvalid; return ::ndk::ScopedAStatus::ok(); }
-        rec = it->second;
-    }
-    // Close 阻塞收尾（flush + 提交），不持 mu_（pollCells 等调用仍可进）
-    rec->session->Close();
-    {
-        std::lock_guard<std::mutex> lk(mu_);
-        // 排出收尾 flush 产生的最后一批 cells，转入 drained 缓冲供下一次 pollCells 取走
-        auto rest = rec->session->PollCells(1 << 20, 0);
-        if (!rest.empty()) drainedCells_[sessionId] = std::move(rest);
-        CloseSessionInternal(sessionId);
+        if (!active_ || active_->id != sessionId) {
+            // 已关闭（或未知）：drained 里还有尾巴就留着等下一次 pollCells
+            *_aidl_return = drainedCells_.count(sessionId) ? kOk : kErrInvalid;
+            return ::ndk::ScopedAStatus::ok();
+        }
+        CloseActiveLocked();
     }
     *_aidl_return = kOk;
     return ::ndk::ScopedAStatus::ok();
@@ -368,72 +367,31 @@ int VtaServiceImpl::OpenSessionLocked(const std::string& tableName, int silenceM
     return ::ndk::ScopedAStatus::ok();
 }
 
-// ---- 会话簿记 ----
+// ---- 死亡回收 / 采音路由 ----
 
-void VtaServiceImpl::CloseSessionInternal(int sessionId) {
-    // 调用方须持 mu_
-    auto it = sessions_.find(sessionId);
-    if (it == sessions_.end()) return;
-    ClientKey* client = static_cast<ClientKey*>(it->second->client);
-    sessions_.erase(it);
-    host_->OnSessionClosed();
-    auto cit = clients_.find(client);
-    if (cit != clients_.end()) {
-        auto& v = cit->second.sessionIds;
-        v.erase(std::remove(v.begin(), v.end(), sessionId), v.end());
-        if (v.empty()) clients_.erase(cit);
-    }
-    // 采音：无 capture 会话了就停（省电）
-    bool anyCapture = false;
-    for (auto& [id, rec] : sessions_)
-        if (rec->session && rec->session->CaptureMode() == 0) anyCapture = true;
-    if (!anyCapture) AudioCapture::Stop();
-}
-
-void VtaServiceImpl::CloseSessionsOf(void* clientCookie) {
-    std::vector<int> ids;
+void VtaServiceImpl::OnBinderDied(void* cookie) {
+    std::shared_ptr<VoiceSession> session;
     {
         std::lock_guard<std::mutex> lk(mu_);
-        auto cit = clients_.find(static_cast<ClientKey*>(clientCookie));
-        if (cit == clients_.end()) {
-            delete static_cast<ClientKey*>(clientCookie);
-            return;
-        }
-        ids = cit->second.sessionIds;
+        if (!active_ || active_->client != cookie) return;  // 不是活动会话的 client
+        session = active_->session;
+        active_.reset();
+        StopCaptureIfIdle();
     }
-    for (int id : ids) {
-        std::shared_ptr<SessionRecord> rec;
-        {
-            std::lock_guard<std::mutex> lk(mu_);
-            auto it = sessions_.find(id);
-            if (it != sessions_.end()) rec = it->second;
-        }
-        if (rec) rec->session->Close();
-        std::lock_guard<std::mutex> lk(mu_);
-        CloseSessionInternal(id);
-    }
-    delete static_cast<ClientKey*>(clientCookie);
+    if (session) session->Close();  // 阻塞收尾（死亡回调线程内，与原实现一致）
 }
-
-void VtaServiceImpl::OnBinderDied(void* cookie) { CloseSessionsOf(cookie); }
 
 void VtaServiceImpl::RouteCapturedAudio(const float* samples, int n) {
-    if (g_serviceInstance == nullptr) return;
-    std::vector<std::shared_ptr<SessionRecord>> targets;
+    if (g_instance == nullptr) return;
+    std::shared_ptr<VoiceSession> target;
     {
-        std::lock_guard<std::mutex> lk(g_serviceInstance->mu_);
-        // broadcastCapture=true：同一份 PCM 广播给所有自主采音会话（多表同时监听，谁的表匹配上谁填）
-        // broadcastCapture=false：仅最近打开的自主采音会话独占麦克风
-        std::shared_ptr<SessionRecord> latest;
-        for (auto& [id, rec] : g_serviceInstance->sessions_) {
-            if (rec->session && rec->session->CaptureMode() == 0) {
-                if (!g_serviceInstance->config_.broadcastCapture) latest = rec;
-                else targets.push_back(rec);
-            }
-        }
-        if (!g_serviceInstance->config_.broadcastCapture && latest) targets.push_back(latest);
+        std::lock_guard<std::mutex> lk(g_instance->mu_);
+        // 单会话：仅路由给 captureMode=0 的活动会话
+        if (g_instance->active_ && g_instance->active_->session != nullptr &&
+            g_instance->active_->session->CaptureMode() == 0)
+            target = g_instance->active_->session;
     }
-    for (auto& rec : targets) rec->session->OnCapturedAudio(samples, n);
+    if (target) target->OnCapturedAudio(samples, n);
 }
 
 }  // namespace vta

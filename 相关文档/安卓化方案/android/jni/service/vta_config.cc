@@ -92,8 +92,6 @@ VtaConfig VtaConfig::Load(const std::string& baseDir) {
     getStr("tablesBaseDir", &c.tablesBaseDir);
     getStr("charPinyinPath", &c.charPinyinPath);
     getStr("defaultTable", &c.defaultTable);
-    getInt("maxSessions", &c.maxSessions);
-    getBool("broadcastCapture", &c.broadcastCapture);
 
     // 相对路径按 baseDir 解析
     c.asrModelDir = JoinPath(baseDir, c.asrModelDir);

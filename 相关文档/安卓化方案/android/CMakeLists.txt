@@ -102,6 +102,7 @@ set(VTA_SRCS
     jni/service/engine_host.cc
     jni/service/vta_config.cc
     jni/service/vta_service_impl.cc
+    jni/service/vta_c_api.cc
     jni/service/selftest_runner.cc
     ${AIDL_GEN_SRCS})
 
