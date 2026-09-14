@@ -31,6 +31,11 @@ struct VtaConfig {
     // "十"的同音实/石/时由 DomainCorrect 在文本层归一）。
     bool hotwordDigits = true;
 
+    // 是否额外把"十"写进热词（默认 false）。
+    // BBPE 模型上实测"十"与"点"在同一段声学上抢分（一点二→十二），故默认不写；
+    // 换用字符级模型时可用此开关 A/B（不同模型上该竞争关系不同，须实测后定默认值）。
+    bool hotwordDigitTen = false;
+
     // 端点（与现网一致：三条规则同阈值，每句停顿即切句）
     bool enableEndpoint = true;
     double rule1TrailingSilence = 2.0;
@@ -60,9 +65,7 @@ struct VtaConfig {
     std::string ranerDir = "models/raner";
     std::string embedDir = "models/embedding";
     std::string tablesBaseDir = "models/embedding/tables";   // Tables:BaseDir
-    std::string hrTablesRoot = "models/sherpa-onnx/hr/tables";  // Tables:HrBaseDir
-    std::string charPinyinPath = "models/sherpa-onnx/hr/hr_char_pinyin.txt";  // Homophone:CharPinyin
-    std::string commonRulesPath = "models/sherpa-onnx/hr/hr_common_rules.txt";  // Homophone:CommonRules
+    std::string charPinyinPath = "models/sherpa-onnx/hr/hr_char_pinyin.txt";  // 拼音字典（表内读音对齐用）
     std::string defaultTable = "default";  // Tables:DefaultTable
 
     // 单活动表模型：导入多张表共存，同一时刻只服务一张（用到哪张用哪张的数据）。

@@ -7,7 +7,6 @@
 #include "../common/strings.h"
 #include "../denoise/gtcrn_denoiser.h"
 #include "../homophone/domain_correction.h"
-#include "../homophone/homophone_replacer.h"
 #include "../service/engine_host.h"
 #include "../tables/table_vector_manager.h"
 #include "../tables/voice_resource.h"
@@ -24,14 +23,12 @@ std::unique_ptr<VoiceSession> VoiceSession::CreateAndStart(int sessionId,
                                                            const VoiceSessionConfig& cfg,
                                                            EngineHost* host,
                                                            std::shared_ptr<const VtxIndex> index,
-                                                           HomophoneReplacer* replacer,
                                                            std::string* err) {
     auto s = std::unique_ptr<VoiceSession>(new VoiceSession());
     s->config_ = cfg;
     s->config_.sessionId = sessionId;
     s->host_ = host;
     s->index_ = std::move(index);
-    s->replacer_ = replacer;
 
     auto asr = host->Asr();
     if (asr == nullptr) {
@@ -44,7 +41,7 @@ std::unique_ptr<VoiceSession> VoiceSession::CreateAndStart(int sessionId,
     std::string hotwords;
     if (s->index_ != nullptr) {
         hotwords = TableVoiceResourceGenerator::BuildHotWordsStream(
-            s->index_->rows, s->index_->colsCount, cfg.hotwordDigits);
+            s->index_->rows, s->index_->colsCount, cfg.hotwordDigits, cfg.hotwordDigitTen);
     }
     s->stream_ = asr->CreateStream(hotwords);
     if (!s->stream_) {
@@ -122,11 +119,11 @@ void VoiceSession::Run() {
     int decodeRounds = 0;
     double decodeTotalMs = 0, decodeMaxMs = 0;
 
-    // 纠错函数：同音/专名纠正 → 数字/列号语境归一 → **表内读音吸附**
+    // 纠错函数：数字/列号语境归一 → **表内读音吸附**
     // 吸附同时作用于 partial 与 final：让界面"实时识别"看到的就是最终会用来解析的文本
     // （否则用户看到"气压"、格子里却填"汽压"，会以为纠错没生效）。
     auto correct = [&](const std::string& raw) {
-        std::string text = replacer_ != nullptr ? replacer_->Apply(raw) : raw;
+        std::string text = DomainCorrect(raw);
         text = DomainCorrect(text);
         if (aligner_ && aligner_->Ready()) text = aligner_->AlignSentence(text);
         return text;

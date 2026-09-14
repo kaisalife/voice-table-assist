@@ -53,7 +53,7 @@ AsrRecognizer::AsrRecognizer(const Config& config) : impl_(new Impl()), config_(
     c.hotwords_file = "";
     c.hotwords_score = static_cast<float>(config.hotwordsScore);
 
-    // sherpa 内置 HR（可选；默认空，同音纠正走本进程 HomophoneReplacer）
+    // sherpa 内置 HR（可选；默认空——同音纠正由表内读音吸附承担）
     c.hr.lexicon = config.hrLexicon;
     c.hr.rule_fsts = config.hrRuleFsts;
 

@@ -2,7 +2,7 @@
 //
 // 验证 C++ 翻译层与 C# 行为一致（方案 §8.1 "字级别一致"）：
 //   1. ChineseNumeral / MergeText / TripleExtractor / CellPhraseGenerator
-//   2. DomainCorrection / HomophoneReplacer（用生成的 hr_char_pinyin.txt）
+//   2. DomainCorrect（数字同音归一）/ SoundAligner（用生成的 hr_char_pinyin.txt）
 //   3. VTX1 round-trip：C++ 读 C# 写的 cell_index.bin（汽机巡检/锅炉巡检）+ C++ 写回再读
 //   4. TableRegistry：读 C# 写的 registry.json + SanitizeTableKey
 //
@@ -22,7 +22,6 @@
 #include "../common/strings.h"
 #include "../embed/vtx1.h"
 #include "../homophone/domain_correction.h"
-#include "../homophone/homophone_replacer.h"
 #include "../tables/table_registry.h"
 #include "../tables/voice_resource.h"
 #include "../text/cell_phrase_generator.h"
@@ -173,29 +172,6 @@ int main(int argc, char** argv) {
     Check(DomainCorrect("时间") == "时间", "时非数字语境不动");
     // 表相关的同音（印度→硬度、外景→外径、二好→二号）由 SoundAligner 覆盖，见 sound_aligner 段
 
-    // ---------- 6. HomophoneReplacer（生成的拼音表 + 规则）----------
-    Section("homophone_replacer");
-    {
-        std::string pinyinPath = modelsDir + "/sherpa-onnx/hr/hr_char_pinyin.txt";
-        if (FileExists(pinyinPath)) {
-            HomophoneReplacer lexicon(pinyinPath);
-            Check(lexicon.Enabled(), "拼音表加载");
-            Check(lexicon.ToTone3Pinyin("硬度") == "ying4du4", "ToTone3Pinyin(硬度)");
-            Check(lexicon.ToTone3Pinyin("外径") == "wai4jing4", "ToTone3Pinyin(外径)");
-            Check(lexicon.ToTone3Pinyin("圆度") == "yuan2du4", "ToTone3Pinyin(圆度)");
-            // 规则：误识别拼音 → 正确汉字（等价现网 hr_rules 生成逻辑）
-            // 独=du2、井=jing3（以生成的拼音表为准）
-            HomophoneReplacer r(pinyinPath, {"ying4du2=硬度", "wai4jing3=外径"});
-            Check(r.Apply("硬度一号是五十点零") == "硬度一号是五十点零", "无错字原样保留");
-            Check(r.Apply(" Ying4du3 ") == " Ying4du3 ", "非汉字串不匹配");
-            // 中文同音错字（"硬独"→ying4du2）
-            Check(r.Apply("硬独一号") == "硬度一号", "同音错字纠正");
-            Check(r.Apply("外井二号") == "外径二号", "跨 token 最长匹配");
-        } else {
-            std::printf("  SKIP  homophone（缺 %s）\n", pinyinPath.c_str());
-        }
-    }
-
     // ---------- 7. VTX1 round-trip（§8.1 核心验收线）----------
     Section("vtx1");
     {
@@ -331,6 +307,8 @@ int main(int argc, char** argv) {
         std::string hw2 = TableVoiceResourceGenerator::BuildHotWordsStream({"水位"}, 2, false);
         Check(hw2.find("点") == std::string::npos && hw2.find("十") == std::string::npos,
               "hotwordDigits=false 时不写单字数字");
+        std::string hw3 = TableVoiceResourceGenerator::BuildHotWordsStream({"水位"}, 2, true, true);
+        Check(hw3.find("十") != std::string::npos, "includeTen=true 时写十（换模型 A/B 用）");
     }
 
     // ---------- 8. TableRegistry（读 C# registry.json + SanitizeTableKey）----------    Section("table_registry");
@@ -356,24 +334,15 @@ int main(int argc, char** argv) {
         Check(k3 == "新表_1", "撞 key 追加后缀（'/'被替换后尾'_'被裁剪）", k3);
     }
 
-    // ---------- 9. 语音资源生成（hotwords/rule 生成器）----------
+    // ---------- 9. 语音资源生成（hotword 生成器）----------
     Section("voice_resource");
     {
-        std::string pinyinPath = modelsDir + "/sherpa-onnx/hr/hr_char_pinyin.txt";
         auto cols = TableVoiceResourceGenerator::ColumnDescriptors(6);
         Check(cols.size() == 72, "6 列 → 72 个列描述符", std::to_string(cols.size()));
         std::string hw = TableVoiceResourceGenerator::BuildHotWords({"硬度", "振动"}, 2);
         Check(hw.find("硬 度\n") != std::string::npos, "热词逐字空格分隔（与现网 C# 一致）", hw);
         Check(hw.find("一 号\n") != std::string::npos, "列描述符入热词");
         Check(hw.find("1号") == std::string::npos, "含 ASCII 数字短语被跳过");
-        if (FileExists(pinyinPath)) {
-            HomophoneReplacer lexicon(pinyinPath);
-            std::string rules =
-                TableVoiceResourceGenerator::BuildRules(lexicon, {"硬度", "振动"}, "", 2);
-            Check(rules.find("ying4du4=硬度\n") != std::string::npos, "行标签规则 拼音=汉字");
-            Check(rules.find("ce4liang4zhi2yi1=测量值一\n") != std::string::npos,
-                  "列描述符恒等规则（值=zhi2）");
-        }
     }
 
     // ---------- 10. JSON 解析器（crf_transitions.json / tokenizer.json 可解析）----------

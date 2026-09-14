@@ -67,6 +67,7 @@ VtaConfig VtaConfig::Load(const std::string& baseDir) {
     getStr("asrModelingUnit", &c.asrModelingUnit);
     getStr("asrBpeVocab", &c.asrBpeVocab);
     getBool("hotwordDigits", &c.hotwordDigits);
+    getBool("hotwordDigitTen", &c.hotwordDigitTen);
     getBool("enableEndpoint", &c.enableEndpoint);
     getDouble("rule1TrailingSilence", &c.rule1TrailingSilence);
     getDouble("rule2TrailingSilence", &c.rule2TrailingSilence);
@@ -89,9 +90,7 @@ VtaConfig VtaConfig::Load(const std::string& baseDir) {
     getStr("ranerDir", &c.ranerDir);
     getStr("embedDir", &c.embedDir);
     getStr("tablesBaseDir", &c.tablesBaseDir);
-    getStr("hrTablesRoot", &c.hrTablesRoot);
     getStr("charPinyinPath", &c.charPinyinPath);
-    getStr("commonRulesPath", &c.commonRulesPath);
     getStr("defaultTable", &c.defaultTable);
     getInt("maxSessions", &c.maxSessions);
     getBool("broadcastCapture", &c.broadcastCapture);
@@ -102,9 +101,7 @@ VtaConfig VtaConfig::Load(const std::string& baseDir) {
     c.ranerDir = JoinPath(baseDir, c.ranerDir);
     c.embedDir = JoinPath(baseDir, c.embedDir);
     c.tablesBaseDir = JoinPath(baseDir, c.tablesBaseDir);
-    c.hrTablesRoot = JoinPath(baseDir, c.hrTablesRoot);
     c.charPinyinPath = JoinPath(baseDir, c.charPinyinPath);
-    c.commonRulesPath = JoinPath(baseDir, c.commonRulesPath);
     return c;
 }
 

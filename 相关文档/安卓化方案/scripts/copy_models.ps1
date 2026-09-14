@@ -101,14 +101,8 @@ if (Test-Path $tables) {
     Copy-ModelFile "embedding\tables\registry.json"
 }
 
-# HR 拼音表/通用规则/热词
+# HR 拼音表（表内读音对齐用）
 Copy-ModelFile "sherpa-onnx\hr\hr_char_pinyin.txt"
-Copy-ModelFile "sherpa-onnx\hr\hr_common_rules.txt"
-New-Item -ItemType Directory -Force -Path (Join-Path $dst "sherpa-onnx\hr\tables\current") | Out-Null
-if (-not (Test-Path (Join-Path $dst "sherpa-onnx\hr\tables\current\hotwords.txt"))) {
-    Set-Content -Path (Join-Path $dst "sherpa-onnx\hr\tables\current\hotwords.txt") -Value "" -Encoding ASCII
-    Write-Host "created placeholder sherpa-onnx\hr\tables\current\hotwords.txt"
-}
 
 Write-Host "done -> $dst"
 

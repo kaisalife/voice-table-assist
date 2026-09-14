@@ -1,4 +1,4 @@
-// jni/service/main.cc —— VTA Native Service 入口（方案 §1/§7.2）
+﻿// jni/service/main.cc —— VTA Native Service 入口（方案 §1/§7.2）
 //
 // 用法：
 //   vta-service [--data-dir <dir>]            常驻服务：注册 "vta" 到 servicemanager 后 join
@@ -15,7 +15,6 @@
 
 #include "../common/log.h"
 #include "../common/strings.h"
-#include "../homophone/homophone_replacer.h"
 #include "../session/voice_session.h"
 #include "../tables/table_vector_manager.h"
 #include "engine_host.h"

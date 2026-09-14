@@ -1,4 +1,4 @@
-// jni/service/selftest_runner.cc —— 从 main.cc 抽出的自检实现（可执行体 + JNI 共用）
+﻿// jni/service/selftest_runner.cc —— 从 main.cc 抽出的自检实现（可执行体 + JNI 共用）
 #include "selftest_runner.h"
 
 #include <chrono>
@@ -6,7 +6,6 @@
 
 #include "../common/log.h"
 #include "../common/strings.h"
-#include "../homophone/homophone_replacer.h"
 #include "../session/voice_session.h"
 #include "../tables/table_vector_manager.h"
 #include "../text/pinyin_table.h"
@@ -39,8 +38,7 @@ SelftestResult RunSelftestOnPcm(const std::string& pcmPath, const std::string& d
     config.lazyLoad = false;
 
     EngineHost host(config);
-    TableVectorManager manager(config.tablesBaseDir, config.hrTablesRoot, config.charPinyinPath,
-                               config.commonRulesPath, config.defaultTable);
+    TableVectorManager manager(config.tablesBaseDir, config.defaultTable);
 
     std::string err;
     if (!host.EnsureEngines(nullptr, &err)) {
@@ -72,7 +70,7 @@ SelftestResult RunSelftestOnPcm(const std::string& pcmPath, const std::string& d
     cfg.captureMode = 1;  // 文件喂流
     cfg.pinyinPath = config.charPinyinPath;  // 表内读音对齐用
     cfg.hotwordDigits = config.hotwordDigits;
-    auto session = VoiceSession::CreateAndStart(1, cfg, &host, index, nullptr, &err);
+    auto session = VoiceSession::CreateAndStart(1, cfg, &host, index, &err);
     if (session == nullptr) {
         r.error = "session: " + err;
         ALOGE("[SELFTEST] %s", r.error.c_str());
@@ -132,8 +130,7 @@ TableSwitchResult RunTableSwitchTest(const std::string& pcmPath, const std::stri
     ALOGI("[SWITCH] 开始多表切换验证：%zu 张表，pcm=%s", tables.size(), pcmPath.c_str());
 
     EngineHost host(config);
-    TableVectorManager manager(config.tablesBaseDir, config.hrTablesRoot, config.charPinyinPath,
-                               config.commonRulesPath, config.defaultTable);
+    TableVectorManager manager(config.tablesBaseDir, config.defaultTable);
 
     std::string err;
     if (!host.EnsureEngines(nullptr, &err)) {
@@ -194,7 +191,7 @@ TableSwitchResult RunTableSwitchTest(const std::string& pcmPath, const std::stri
         cfg.captureMode = 1;
         cfg.pinyinPath = config.charPinyinPath;
         cfg.hotwordDigits = config.hotwordDigits;
-        auto session = VoiceSession::CreateAndStart(1, cfg, &host, index, nullptr, &err);
+        auto session = VoiceSession::CreateAndStart(1, cfg, &host, index, &err);
         if (session == nullptr) {
             r.error = "session(" + t + "): " + err;
             return r;

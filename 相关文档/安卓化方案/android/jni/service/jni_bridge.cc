@@ -58,7 +58,6 @@ const char* kAssetFiles[] = {
     "models/embedding/tables/qiji/cell_index.bin",
     "models/embedding/tables/guolu/cell_index.bin",
     "models/sherpa-onnx/hr/hr_char_pinyin.txt",
-    "models/sherpa-onnx/hr/tables/current/hotwords.txt",
     "test/selftest_16k.f32",
     "test/homophone_16k.f32",
 };

@@ -8,19 +8,12 @@
 #include "../common/strings.h"
 #include "../embed/embedder.h"
 #include "../text/cell_phrase_generator.h"
-#include "voice_resource.h"
 
 namespace vta {
 
 TableVectorManager::TableVectorManager(const std::string& tablesBaseDir,
-                                       const std::string& hrTablesRoot,
-                                       const std::string& charPinyinPath,
-                                       const std::string& commonRulesPath,
                                        const std::string& defaultTable)
     : tablesBaseDir_(tablesBaseDir),
-      hrTablesRoot_(hrTablesRoot),
-      charPinyinPath_(charPinyinPath),
-      commonRulesPath_(commonRulesPath),
       registry_(new TableRegistry(tablesBaseDir, defaultTable)) {}
 
 std::string TableVectorManager::ActiveTable() const {
@@ -187,16 +180,6 @@ std::shared_ptr<const VtxIndex> TableVectorManager::LoadIndex(const std::string&
         return nullptr;
     }
     return idx;
-}
-
-std::string TableVectorManager::RebuildVoiceResources(const std::string& tableKey,
-                                                      const std::vector<std::string>& rowLabels,
-                                                      int columnCount) {
-    // 目标目录：default 表 → tables/current（向后兼容）；其余 → tables/{key}
-    bool isDefault = tableKey.empty() || tableKey == "default";
-    std::string tableDir = isDefault ? hrTablesRoot_ + "/current" : hrTablesRoot_ + "/" + tableKey;
-    return TableVoiceResourceGenerator::Rebuild(charPinyinPath_, commonRulesPath_, hrTablesRoot_,
-                                                tableDir, rowLabels, columnCount);
 }
 
 }  // namespace vta

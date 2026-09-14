@@ -15,7 +15,6 @@ namespace vta {
 class AsrRecognizer;
 class EngineHost;
 class GtcrnDenoiser;
-class HomophoneReplacer;
 class SoundAligner;
 class VtxIndex;
 
@@ -30,17 +29,16 @@ struct VoiceSessionConfig {
     int captureMode = 0;
     std::string pinyinPath;  // 拼音字典（表内读音对齐用；空 = 不做对齐）
     bool hotwordDigits = false;  // 是否把单字数字写入热词（默认 false）
+    bool hotwordDigitTen = false;  // 是否额外写"十"（BBPE 模型默认不写；换模型 A/B 用）
 };
 
 // 生命周期：openSession → CreateAndStart → pushPcm/采音 → pollCells → closeSession
 class VoiceSession {
 public:
-    // host 提供识别器/降噪器/语义引擎；index 为该表索引快照（共享所有权）；
-    // replacer 为该表 HR 规则（可为 null）
+    // host 提供识别器/降噪器/语义引擎；index 为该表索引快照（共享所有权）
     static std::unique_ptr<VoiceSession> CreateAndStart(int sessionId, const VoiceSessionConfig& cfg,
                                                         EngineHost* host,
                                                         std::shared_ptr<const VtxIndex> index,
-                                                        HomophoneReplacer* replacer,
                                                         std::string* err);
     ~VoiceSession();
 
@@ -67,7 +65,7 @@ public:
 
     int Id() const { return config_.sessionId; }
     const std::string& TableName() const { return config_.tableName; }
-    // 最近一段 final 文本（HR+领域纠错后）；自检/日志用
+    // 最近一段 final 文本（纠错后）；自检/日志用
     std::string LastFinalText() const;
 
 private:
@@ -77,7 +75,6 @@ private:
     EngineHost* host_;
     std::shared_ptr<const VtxIndex> index_;      // 共享所有权：多表并发不悬空
     std::shared_ptr<AsrRecognizer> asr_;        // 共享所有权：识别器重建时不悬空
-    HomophoneReplacer* replacer_;
 
     std::unique_ptr<AsrRecognizer::Stream> stream_;
     std::unique_ptr<GtcrnDenoiser> denoiser_;

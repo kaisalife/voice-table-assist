@@ -22,14 +22,13 @@ struct ImportSummary {
     int dim = 0;
 };
 
-// 多表向量库 + 语音特化资源管理器（单例）。
+// 多表向量库管理器（单例）。
 // 按表持久化 embedding 索引（tables/{key}/cell_index.bin 二进制 VTX1 + registry.json），
 // 查询/导入按表名切换，卸载只释放内存，绝不删盘。key 一律经 TableRegistry 解析，杜绝路径穿越。
 class TableVectorManager {
 public:
-    TableVectorManager(const std::string& tablesBaseDir, const std::string& hrTablesRoot,
-                       const std::string& charPinyinPath, const std::string& commonRulesPath,
-                       const std::string& defaultTable);
+    explicit TableVectorManager(const std::string& tablesBaseDir,
+                                const std::string& defaultTable);
 
     const std::string& DefaultTable() const { return registry_->DefaultTable(); }
     std::string ActiveTable() const;
@@ -44,7 +43,7 @@ public:
     // 解析目标表 key（快操作，纯内存）；未注册返回空串。
     std::string ResolveTargetKey(const std::string& tableName) const;
 
-    // 导入表：构建索引 → 写时拷贝落盘 → 更新 registry → 激活 → 重建该表语音资源。
+    // 导入表：构建索引 → 写时拷贝落盘 → 更新 registry → 激活。
     // embedder 由调用方注入（懒加载完成后）。失败返回 ok=false。
     bool Import(const std::string& tableName, const std::vector<std::string>& rowLabels,
                 int columnCount, EmbeddingEngine* embedder, ImportSummary* out,
@@ -55,10 +54,6 @@ public:
 
     std::vector<TableEntry> ListTables() const { return registry_->Snapshot(); }
 
-    // 重建语音资源后返回聚合热词文件路径（recognizer 热加载用）；无表返回空串。
-    std::string RebuildVoiceResources(const std::string& tableKey,
-                                      const std::vector<std::string>& rowLabels, int columnCount);
-
 private:
     std::string CellIndexDir(const std::string& key) const { return tablesBaseDir_ + "/" + key; }
     std::string CellIndexPath(const std::string& key) const {
@@ -67,9 +62,6 @@ private:
     std::shared_ptr<const VtxIndex> LoadIndex(const std::string& key);
 
     std::string tablesBaseDir_;
-    std::string hrTablesRoot_;
-    std::string charPinyinPath_;
-    std::string commonRulesPath_;
     std::unique_ptr<TableRegistry> registry_;
     mutable std::mutex lock_;
 

@@ -41,7 +41,7 @@ public:
         // 热词（解码 bias，字级 token 空格分隔）
         std::string hotwordsFile;
         double hotwordsScore = 2.0;
-        // sherpa 内置 HomophoneReplacer（默认空——同音纠正由本进程 HR 模块做，与 C# 管线一致）
+        // sherpa 内置 HomophoneReplacer（默认空——同音纠正由表内读音吸附承担，与现网热词互为补充）
         std::string hrLexicon;
         std::string hrRuleFsts;
         std::string hrRuleFars;

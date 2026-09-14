@@ -7,7 +7,6 @@
 #include "../common/log.h"
 #include "../common/strings.h"
 #include "../embed/embedder.h"
-#include "../homophone/homophone_replacer.h"
 #include "../ner/raner_engine.h"
 #include "../service/audio_capture.h"
 #include "../tables/table_vector_manager.h"
@@ -31,23 +30,6 @@ AIBinder_DeathRecipient* GetDeathRecipient() {
     if (g_deathRecipient == nullptr) g_deathRecipient = AIBinder_DeathRecipient_new(DeathCb);
     return g_deathRecipient;
 }
-
-// 把 hr_rules.txt 文本按行拆开（HomophoneReplacer 规则入参）
-std::vector<std::string> SplitRules(const std::string& text) {
-    std::vector<std::string> lines;
-    size_t start = 0;
-    while (start <= text.size()) {
-        size_t nl = text.find('\n', start);
-        if (nl == std::string::npos) {
-            lines.push_back(text.substr(start));
-            break;
-        }
-        lines.push_back(text.substr(start, nl - start));
-        start = nl + 1;
-    }
-    return lines;
-}
-
 }  // namespace
 
 // ClientKey：client 生命周期 cookie（death recipient / 会话归属共用）
@@ -70,15 +52,7 @@ VtaServiceImpl::~VtaServiceImpl() {
 }
 
 bool VtaServiceImpl::Init(std::string* err) {
-    manager_ = std::make_unique<TableVectorManager>(config_.tablesBaseDir, config_.hrTablesRoot,
-                                                    config_.charPinyinPath, config_.commonRulesPath,
-                                                    config_.defaultTable);
-    // 拼音表全局一次加载（小文件）
-    if (FileExists(config_.charPinyinPath)) {
-        pinyinReplacer_ = std::make_unique<HomophoneReplacer>(config_.charPinyinPath);
-    } else {
-        ALOGW("[HR] 拼音表缺失: %s（同音纠正将不生效）", config_.charPinyinPath.c_str());
-    }
+    manager_ = std::make_unique<TableVectorManager>(config_.tablesBaseDir, config_.defaultTable);
     healthState_ = "ok";
     ALOGI("[VTA] init ok. defaultTable=%s tables=%s", config_.defaultTable.c_str(),
           config_.tablesBaseDir.c_str());
@@ -237,15 +211,16 @@ int VtaServiceImpl::OpenSessionLocked(const std::string& tableName, int silenceM
     cfg.captureMode = captureMode;
     cfg.pinyinPath = config_.charPinyinPath;  // 表内读音对齐用
     cfg.hotwordDigits = config_.hotwordDigits;
+    cfg.hotwordDigitTen = config_.hotwordDigitTen;
 
-    // 表内读音吸附（HR 规则/热词已按设计移除）：会话只需该表的索引 + 读音词表
+    // 表内读音吸附：会话只需该表的索引 + 读音词表
     int id = nextSessionId_++;
     auto record = std::make_unique<SessionRecord>();
     record->id = id;
     record->client = clientKey;
     record->tableKey = key;
     record->session =
-        VoiceSession::CreateAndStart(id, cfg, host_.get(), index, nullptr, &err);
+        VoiceSession::CreateAndStart(id, cfg, host_.get(), index, &err);
     if (record->session == nullptr) {
         ALOGW("[SESSION] 打开会话失败: %s", err.c_str());
         return kErrInternal;

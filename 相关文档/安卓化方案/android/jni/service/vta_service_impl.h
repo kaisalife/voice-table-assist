@@ -30,7 +30,6 @@ class SpAIBinder;
 namespace vta {
 
 class TableVectorManager;
-class HomophoneReplacer;
 struct ClientKey;
 
 // 返回码（与 IVtaService.aidl 注释一致）
@@ -85,13 +84,11 @@ private:
         ClientKey* client = nullptr;
         std::string tableKey;  // 本会话绑定的表 key（并发门卫：同 client 同表只一路）
         std::unique_ptr<VoiceSession> session;
-        std::unique_ptr<HomophoneReplacer> replacer;  // 该表 HR 规则（随会话捕获）
     };
     struct ClientRecord {
         std::vector<int> sessionIds;
     };
 
-    std::string LoadTableReplacerRules(const std::string& tableKey) const;
     int OpenSessionLocked(const std::string& tableName, int silenceMs, int captureMode,
                           ClientKey* clientKey);
     void CloseSessionInternal(int sessionId);  // 须持 mu_
@@ -100,7 +97,6 @@ private:
     VtaConfig config_;
     std::unique_ptr<EngineHost> host_;
     std::unique_ptr<TableVectorManager> manager_;
-    std::unique_ptr<HomophoneReplacer> pinyinReplacer_;  // 仅拼音表（生成规则用）
 
     std::mutex mu_;
     std::map<int, std::shared_ptr<SessionRecord>> sessions_;

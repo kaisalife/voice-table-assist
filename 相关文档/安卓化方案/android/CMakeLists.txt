@@ -89,7 +89,6 @@ set(VTA_SRCS
     jni/tests/mmi_kernel_test.cc
     jni/embed/vtx1.cc
     jni/embed/embedder.cc
-    jni/homophone/homophone_replacer.cc
     jni/homophone/domain_correction.cc
     jni/ner/raner_engine.cc
     jni/denoise/gtcrn_denoiser.cc
@@ -161,7 +160,6 @@ if(VTA_HOST_TEST)
         jni/text/sound_aligner.cc
         jni/text/triple_extractor.cc
         jni/embed/vtx1.cc
-        jni/homophone/homophone_replacer.cc
         jni/homophone/domain_correction.cc
         jni/tables/table_registry.cc
         jni/tables/voice_resource.cc
