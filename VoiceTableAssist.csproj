@@ -27,6 +27,10 @@
          静态资源清单，从 bin 直接运行时验证页 /voice-mic.js 等才可访问 -->
     <Content Remove="wwwroot\**" />
     <Content Include="wwwroot\**" CopyToOutputDirectory="PreserveNewest" />
+    <!-- assets/** 是随代码走的运行时小资源（表内读音吸附的拼音字典），必须拷到输出目录：
+         老版本部署的 models/ 里没有 hr_char_pinyin.txt，git 拉取后直接替换程序文件即可运行 -->
+    <Content Remove="assets\**" />
+    <Content Include="assets\**" CopyToOutputDirectory="PreserveNewest" />
     <!-- tests/** 由 VoiceTableAssist.Tests 单独编译；避免主项目 SDK 把测试文件纳入自身 Compile 列表 -->
     <Compile Remove="tests\**" />
     <Content Remove="tests\**" />

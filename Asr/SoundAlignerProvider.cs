@@ -12,11 +12,17 @@ internal static class SoundAlignerProvider
     {
         if (rows is null || rows.Count == 0) return null;
 
-        // 拼音字典：先按 exe 目录解析，找不到回退模型根（RANER_MODEL_DIR / exe/models），与 ASR 模型解析一致
-        var charPinyin = SherpaNativeOptions.ResolveAsset(
-            configuration["Align:CharPinyin"] is { Length: > 0 } p ? p : "sherpa-onnx/hr/hr_char_pinyin.txt");
-        var pinyin = PinyinTable.Get(charPinyin);
-        if (pinyin is null) return null;
+        // 拼音字典解析顺序：配置路径（默认随代码发布的 assets/hr_char_pinyin.txt，exe 目录优先、
+        // 其次模型根）→ 旧部署兼容（models/sherpa-onnx/hr/hr_char_pinyin.txt）。
+        var configured = configuration["Align:CharPinyin"] is { Length: > 0 } p ? p : "assets/hr_char_pinyin.txt";
+        var pinyin = PinyinTable.Get(SherpaNativeOptions.ResolveAsset(configured));
+        if (pinyin is null)
+        {
+            const string legacy = "sherpa-onnx/hr/hr_char_pinyin.txt";
+            if (!string.Equals(configured.Replace('\\', '/'), legacy, StringComparison.OrdinalIgnoreCase))
+                pinyin = PinyinTable.Get(SherpaNativeOptions.ResolveAsset(legacy));
+        }
+        if (pinyin is null) return null;   // 字典缺失 → 退化为仅通用数字同音归一（PinyinTable 已打日志）
 
         var aligner = new SoundAligner(pinyin, rows, columnCount)
         {

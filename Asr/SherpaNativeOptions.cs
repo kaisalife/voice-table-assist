@@ -22,6 +22,7 @@ internal sealed record SherpaNativeOptions(
     double Rule1TrailingSilence,
     double Rule2TrailingSilence,
     double Rule3TrailingSilence,
+    string ExpectedNativeVersion,
     int SampleRate)
 {
     public static SherpaNativeOptions From(IConfiguration configuration)
@@ -52,6 +53,9 @@ internal sealed record SherpaNativeOptions(
             s.GetValue("Rule1TrailingSilence", 2.0),
             s.GetValue("Rule2TrailingSilence", 2.0),
             s.GetValue("Rule3TrailingSilence", 2.0),
+            // 绑定（Asr/SherpaNative.cs）对齐的原生库版本：不一致时告警，避免旧 models/ 里的
+            // 老 sherpa 原生库与新结构体定义混用（可能加载失败或崩溃）。
+            s["ExpectedNativeVersion"] ?? "1.13.6",
             s.GetValue("SampleRate", 16000));
     }
 

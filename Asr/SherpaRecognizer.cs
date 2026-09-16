@@ -95,6 +95,17 @@ internal sealed class SherpaRecognizerHost : IHostedService, IDisposable
         SherpaNative.Load(nativeDir);
         Version = Marshal.PtrToStringUTF8(SherpaNative.SherpaOnnxGetVersionStr()) ?? "?";
 
+        // 版本自检：模型/原生库随部署包分发，老机器的 models/sherpa-onnx 里可能是旧版原生库，
+        // 与 Asr/SherpaNative.cs 的结构体定义（对齐 1.13.6）混用可能加载失败或崩溃——提前给出可操作告警。
+        if (!string.IsNullOrWhiteSpace(_options.ExpectedNativeVersion)
+            && !Version.StartsWith(_options.ExpectedNativeVersion, StringComparison.Ordinal))
+        {
+            var warning = $"原生 sherpa-onnx 版本 {Version} 与绑定版本 {_options.ExpectedNativeVersion} 不一致；" +
+                          $"建议用 {_options.ExpectedNativeVersion} 的 sherpa-onnx-c-api.dll + onnxruntime.dll 覆盖 {nativeDir}";
+            Console.WriteLine($"[ASR] WARN {warning}");
+            _logger.LogWarning("[ASR] {Warning}", warning);
+        }
+
         var encoder = SherpaNativeOptions.ResolveAsset(_options.Encoder);
         var decoder = SherpaNativeOptions.ResolveAsset(_options.Decoder);
         var joiner = SherpaNativeOptions.ResolveAsset(_options.Joiner);
