@@ -34,6 +34,9 @@ tests/obj/
 certs/
 wwwroot/ca.crt
 
+# 涉密前端（APICloud/Cordova 主应用源码，含现场业务页面）：仅本地保留，禁止入库/推送
+front/
+
 # 日志
 *.log
 

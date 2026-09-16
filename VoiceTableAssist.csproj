@@ -31,6 +31,10 @@
     <Compile Remove="tests\**" />
     <Content Remove="tests\**" />
     <None Remove="tests\**" />
+    <!-- 相关文档/** 内含安卓化方案的原生工程与 .NET 示例源码（非本服务代码），禁止纳入编译 -->
+    <Compile Remove="相关文档\**" />
+    <Content Remove="相关文档\**" />
+    <None Remove="相关文档\**" />
     <!-- models/** 是大体积模型资源（raner + embedding），仅运行时从发布目录读取，禁止编译期拷入输出目录 -->
     <Content Remove="models\**" />
     <None Include="models\**">

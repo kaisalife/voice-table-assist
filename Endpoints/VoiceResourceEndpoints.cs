@@ -24,10 +24,8 @@ internal static class VoiceResourceEndpoints
             var voice = TableVoiceResourceGenerator.Rebuild(configuration, rows, columnCount, tableKey);
             if (!voice.Ok) return Results.BadRequest(new { error = voice.Error });
 
-            // 热词聚合文件已更新 → 调度 sherpa 重启加载（防抖合并，2s 窗口）
-            manager.ScheduleSherpaRestart("语音资源刷新");
-
-            Console.WriteLine($"[HR] 语音资源已重建: {Path.Combine(voice.TableDir!, "hr_rules.txt")} (key={tableKey ?? "default"} {rows.Count}行/{columnCount}列)");
+            // 热词按流传入进程内识别器，导入即对新连接生效——无需重启、无不可用窗口。
+            Console.WriteLine($"[VOICE] 本表热词已重建: {Path.Combine(voice.TableDir!, "hotwords.txt")} (key={tableKey ?? "default"} {rows.Count}行/{columnCount}列)");
             return Results.Ok(new { status = "ok", rowsCount = rows.Count, columnCount, tableKey });
         });
     }

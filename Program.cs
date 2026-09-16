@@ -44,10 +44,10 @@ else
     Console.WriteLine("[HTTPS] 未找到 certs/gateway.pfx，仅 HTTP。平板浏览器需麦克风时先运行 make-cert.bat。");
 }
 
-// 自动管理 sherpa-onnx 进程生命周期：注册具体类型供 EngineHost 按需启停（懒加载），
-// 同时挂 IHostedService 兜底退出清理。
-builder.Services.AddSingleton<SherpaServerManager>();
-builder.Services.AddHostedService(sp => sp.GetRequiredService<SherpaServerManager>());
+// sherpa-onnx 流式识别：**进程内**（P/Invoke，无子进程、无端口）。
+// 识别器随服务启动后台常驻加载；热词按行情随连接传入，导入/切表不重建、不重启。
+builder.Services.AddSingleton<SherpaRecognizerHost>();
+builder.Services.AddHostedService(sp => sp.GetRequiredService<SherpaRecognizerHost>());
 
 // GTCRN 进程内 PCM 降噪器（可选）。仅在 Denoise.Enabled=true 且 ONNX 文件存在时注册。
 // 已实现流式 STFT/ISTFT + 状态缓存（与 sherpa-onnx 参考一致），并在 SherpaAsrBridge PCM 上行处调用。
@@ -91,6 +91,15 @@ builder.Services.AddSingleton<TableVectorManager>();
 builder.Services.AddHostedService<TableIdleMonitor>();
 
 var app = builder.Build();
+
+// 关键顺序：先预载 sherpa 自带 onnxruntime(1.27)，再让 Microsoft.ML.OnnxRuntime(1.20) 加载。
+// 同名原生模块在 Windows 上按"已加载模块"复用，谁先入进程谁被绑定——sherpa-c-api 绑定到 1.20 会加载失败，
+// 而 ORT C API 向后兼容（1.20 托管包装跑在 1.27 运行时上安全）。必须在任何 HTTP 请求/ONNX 使用之前执行。
+{
+    ILogger? asrLog = null;
+    try { asrLog = app.Services.GetRequiredService<ILoggerFactory>().CreateLogger("Asr"); } catch { }
+    if (asrLog is not null) SherpaRecognizerHost.TryPreloadNative(builder.Configuration, asrLog);
+}
 
 // DENOISE 状态落盘排查：文件日志已注册，此处把 GTCRN 实际加载结果写进日志（Console 在服务模式不可见）。
 {
@@ -175,13 +184,27 @@ app.Map("/api/speech/asr/stream", async (HttpContext context) =>
     var sessionCts = host.AcquireSession();
     try
     {
-        // HR 同音纠正规则按 key 加载（小文件 + 缓存，毫秒级），随连接捕获不随切表漂移。
         // 握手同步激活该表：唯一会话期间活动表不会变化，会话提交时直接查当前活动索引，无需再等待快照。
-        var replacer = HomophoneReplacerProvider.Get(configuration, tableKey);
-        manager.Activate(tableKey);
-        var sessionFactory = ConnectionSender.CreateFactory(configuration, context.RequestServices, logger, tableKey);
+        var index = manager.Activate(tableKey);
+        // 表内读音吸附（词表 = 本表行标签 + 列说法，按读音纠错，无需任何人工规则；换表自动生效）。
+        // 与连接捕获、不随切表漂移；拼音字典缺失时退化为仅通用数字同音归一。
+        var aligner = SoundAlignerProvider.Get(configuration, index?.Rows, index?.ColsCount ?? 0);
+        if (aligner is not null)
+        {
+            aligner.OnReplace = (original, canonical, score) =>
+                logger.LogInformation("[ALIGN] \"{Original}\" → \"{Canonical}\"（相似度 {Score:F2}）", original, canonical, score);
+            logger.LogInformation("[ALIGN] 表 {Table} 读音词表 {Count} 条（行标签 + 列说法），阈值 {Threshold:F2}",
+                tableKey, aligner.Vocabulary.Count, aligner.Threshold);
+        }
+        // 本表热词串（'/' 分隔）随流传入进程内识别器：识别器常驻，导入/切表后新连接立即生效。
+        var hotwords = index is { Rows.Length: > 0 }
+            ? TableVoiceResourceGenerator.BuildHotWordsStream(index.Rows, index.ColsCount)
+            : null;
+
+        var sessionFactory = ConnectionSender.CreateFactory(configuration, context.RequestServices, logger, tableKey, aligner);
+        var engine = context.RequestServices.GetRequiredService<SherpaRecognizerHost>();
         var denoiser = context.RequestServices.GetService<GtcrnDenoiser>();   // 默认 NULL（未启用降噪）；启用时已注册单例
-        await SherpaAsrBridge.RunAsync(context, SherpaOptions.From(configuration), replacer, context.RequestAborted, sessionCts.Token, denoiser, sessionFactory);
+        await SherpaAsrBridge.RunAsync(context, engine, hotwords, aligner, context.RequestAborted, sessionCts.Token, denoiser, sessionFactory);
     }
     finally
     {

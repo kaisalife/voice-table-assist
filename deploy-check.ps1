@@ -27,7 +27,7 @@ $base = "http://127.0.0.1:$Port"
 # 而 Kestrel 只绑定 IPv4 时 PowerShell 的 Invoke-RestMethod 会因回退等待而超时误判。
 
 # ---- -1) 目标机运行环境前置处理：VC++ 运行时缺失检测 + 静默安装；解 MOTW 锁 ----
-# sherpa-onnx-online-websocket-server.exe 依赖 VC++ 2015-2022 x64 运行时（含较新的
+# sherpa-onnx-c-api.dll（进程内识别）依赖 VC++ 2015-2022 x64 运行时（含较新的
 # VCRUNTIME140_1.dll / MSVCP140_1.dll）；目标机缺它或装旧版时启动报 0xC000007B。
 # 本节随包带 vc_redist.x64.exe，检测到任一关键 DLL 缺失即静默安装（覆盖旧版）。
 # 同时对所有 exe/dll 跑 Unblock-File，解除下载/拷贝产生的 Mark-of-the-Web，避免 SmartScreen 拦截。
@@ -73,25 +73,33 @@ Get-ChildItem $PSScriptRoot -Recurse -Include *.exe,*.dll -File |
     ForEach-Object { Unblock-File -Path $_.FullName -ErrorAction SilentlyContinue }
 Write-Host "OK    已解除 SmartScreen 锁定（Unblock-File）"
 
-# ---- -0.5) sherpa exe 直接启动测试：拿到明确 ExitCode，不再笼统报 0xC000007B ----
-# 用 --help 让 sherpa exe 打印帮助后退出（不监听端口、不阻塞）；ExitCode 0 = 依赖齐全。
-# 失败时列出所有关键依赖 DLL 的存在状态，方便一眼定位缺哪个。
+# ---- -0.5) sherpa-onnx 原生依赖自检（进程内 P/Invoke：只有 DLL，不再有子进程 exe）----
+# c-api.dll 仍依赖 VC++ 2015-2022 x64 运行时（VCRUNTIME140*.dll / MSVCP140*.dll）；
+# 缺失时服务内加载原生库会失败（/api/health 的 asrError 会给出明确原因）。
 Write-Host "==> 验证 sherpa-onnx 原生库依赖 ..."
-$sherpaExe = Join-Path $PSScriptRoot 'models\sherpa-onnx\sherpa-onnx-online-websocket-server.exe'
-$sherpaTest = Start-Process -FilePath $sherpaExe -ArgumentList '--help' -Wait -PassThru -NoNewWindow
-if ($sherpaTest.ExitCode -eq 0) {
-    Write-Host "OK    sherpa-onnx exe 依赖齐全（ExitCode=0）"
-} else {
-    Write-Host "FAIL  sherpa-onnx exe 启动失败（ExitCode=$($sherpaTest.ExitCode) = 0x$('{0:X}' -f ([uint32]$sherpaTest.ExitCode))）"
-    Write-Host "      关键依赖 DLL 状态："
-    $deps = @('dxgi.dll','VCRUNTIME140.dll','VCRUNTIME140_1.dll','MSVCP140.dll','MSVCP140_1.dll','dbghelp.dll','SETUPAPI.dll','WS2_32.dll','MSWSOCK.dll')
-    foreach ($d in $deps) {
-        $ok = Test-Path "$env:SystemRoot\System32\$d"
-        Write-Host ("        {0,-25} {1}" -f $d, $(if ($ok) { 'OK' } else { '缺失' }))
+$nativeDirCheck = Join-Path $PSScriptRoot 'models\sherpa-onnx'
+$nativeFail = 0
+foreach ($f in 'sherpa-onnx-c-api.dll', 'onnxruntime.dll') {
+    if (Test-Path (Join-Path $nativeDirCheck $f)) {
+        Write-Host "OK    sherpa 原生库 $f"
+    } else {
+        Write-Host "FAIL  缺少 sherpa 原生库: $nativeDirCheck\$f"
+        $nativeFail++
     }
-    Write-Host "      处理建议：若 VC++ 相关 DLL 缺失，重装 vc_redist.x64.exe；若 dxgi.dll 缺失，装 DirectX 修复工具"
-    exit 1
 }
+$deps = @('VCRUNTIME140.dll','VCRUNTIME140_1.dll','MSVCP140.dll','MSVCP140_1.dll','WS2_32.dll','SETUPAPI.dll')
+$missingDeps = @()
+foreach ($d in $deps) {
+    if (-not (Test-Path "$env:SystemRoot\System32\$d")) { $missingDeps += $d }
+}
+if ($missingDeps.Count -eq 0) {
+    Write-Host "OK    VC++ 运行时依赖齐全"
+} else {
+    Write-Host "FAIL  缺少系统依赖: $($missingDeps -join ', ')"
+    Write-Host "      处理建议：重装 vc_redist.x64.exe（随包提供）"
+    $nativeFail++
+}
+if ($nativeFail -gt 0) { exit 1 }
 
 # ---- 0) 部署完整性自检：关键文件缺失提前 FAIL，避免拉起后才暴露部署遗漏 ----
 Write-Host "==> 部署完整性自检 ..."
@@ -107,13 +115,10 @@ try {
     foreach ($m in @($cfg.SherpaServer.Encoder, $cfg.SherpaServer.Decoder, $cfg.SherpaServer.Joiner, $cfg.SherpaServer.Tokens)) {
         Check-File $m "ASR 模型 $m"
     }
-    # sherpa exe + 同目录原生 DLL（路径随 appsettings SherpaServer:ExePath）
-    $exeRel = $cfg.SherpaServer.ExePath
-    Check-File $exeRel 'sherpa-onnx 流式识别服务 exe'
-    $exeDir = Split-Path (Join-Path $PSScriptRoot $exeRel) -Parent
-    foreach ($dll in 'onnxruntime.dll', 'onnxruntime_providers_shared.dll', 'sherpa-onnx-c-api.dll', 'sherpa-onnx-cxx-api.dll') {
-        if (Test-Path (Join-Path $exeDir $dll)) { Write-Host "OK    sherpa 运行时 DLL $dll" }
-        else { Write-Host "FAIL  缺少 sherpa 运行时 DLL: $exeDir\$dll"; $script:fail++ }
+    # sherpa 原生库（进程内识别：c-api.dll + onnxruntime.dll，路径随 appsettings SherpaServer:NativeDir）
+    $nativeRel = $cfg.SherpaServer.NativeDir
+    foreach ($dll in 'sherpa-onnx-c-api.dll', 'onnxruntime.dll') {
+        Check-File (Join-Path $nativeRel $dll) "sherpa 原生库 $dll"
     }
     Check-File (Join-Path 'models' 'raner') 'RaNER 模型目录 models/raner'
     Check-File (Join-Path 'models' 'embedding') '嵌入模型目录 models/embedding'
@@ -123,11 +128,8 @@ try {
     } else {
         Write-Host "WARN  GTCRN 降噪模型暂缺 models/asr/gtcrn_simple.onnx（仅 Denoise.Enabled=true 的工厂噪声场景需要）"
     }
-    if (Test-Path (Join-Path $PSScriptRoot $cfg.SherpaServer.HotwordsFile)) {
-        Write-Host "OK    sherpa 热词文件 $($cfg.SherpaServer.HotwordsFile)"
-    } else {
-        Write-Host "WARN  热词文件暂缺（服务启动会自动创建，导入表后自动聚合填充）: $($cfg.SherpaServer.HotwordsFile)"
-    }
+    # 热词不再走文件：每通会话按表随流传入识别器（sherpa-onnx/hr/tables/*/hotwords.txt 仅供运维查看）
+    Write-Host "INFO  热词按流传入（CreateStream(hotwords)），无需预置热词文件"
 } catch { Write-Host "WARN  appsettings 解析失败，跳过模型路径检查: $($_.Exception.Message)" }
 if ($script:fail -gt 0) {
     Write-Host "FAIL  部署缺少 $script:fail 个关键文件，请补齐后重新验证。"
@@ -157,9 +159,7 @@ for ($i = 0; $i -lt 60; $i++) {
 if (-not $ready) {
     Write-Host "FAIL  服务未就绪（$base/api/health）"
     if (-not $proc.HasExited) { Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue }
-    Get-Process -Name 'sherpa-onnx-online-websocket-server' -ErrorAction SilentlyContinue |
-        Stop-Process -Force -ErrorAction SilentlyContinue
-    Write-Host "FAIL  已停止服务及 sherpa-onnx 子进程"; exit 1
+    Write-Host "FAIL  已停止服务"; exit 1
 }
 
 Write-Host "OK    服务就绪 -> activeTable=$($h.activeTable), provider=$($h.provider)"
@@ -172,7 +172,7 @@ try {
 
 # ---- 2/3) 自测 + 保持运行，整体包进 try/finally ----
 # PowerShell 中 exit / Ctrl+C / 异常都会先执行 finally，
-# 确保任何路径退出都不残留 VoiceTableAssist 和 sherpa-onnx 进程。
+# 确保任何路径退出都不残留 VoiceTableAssist 进程。
 try {
     # ---- 2) （可选）多表自测（无语音，只调 HTTP 接口）----
     if ($Selftest) {
@@ -197,26 +197,21 @@ try {
     }
 } finally {
     if ($proc -and -not $proc.HasExited) { Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue }
-    # 连带停掉其子进程 sherpa-onnx
-    Get-Process -Name 'sherpa-onnx-online-websocket-server' -ErrorAction SilentlyContinue |
-        Stop-Process -Force -ErrorAction SilentlyContinue
+    # 进程内识别：没有 sherpa 子进程需要连带清理
 
-    # 还原干净：自测导入的数据表（表注册表/向量索引）与聚合热词全部删除，恢复出厂状态。
+    # 还原干净：自测导入的数据表（表注册表/向量索引）与各表热词文件全部删除，恢复出厂状态。
     # 在服务停止后执行（文件无锁）；下次部署验证或前端初始化会重新导入建库。
     if ($script:selftestRan) {
         Write-Host "==> 清理自测导入的数据表（还原干净）..."
         Remove-Item -Recurse -Force (Join-Path $PSScriptRoot 'models\embedding\tables') -ErrorAction SilentlyContinue
-        # 各表语音资源目录（current 之外），聚合热词随之失效
+        # 各表语音资源目录（current 之外；仅运维查看用的 hotwords.txt）
         Get-ChildItem (Join-Path $PSScriptRoot 'sherpa-onnx\hr\tables') -Directory -ErrorAction SilentlyContinue |
             Where-Object Name -ne 'current' |
             Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
-        # current 下 default 表的纠错规则也随数据删除，仅保留空热词占位
-        Get-ChildItem (Join-Path $PSScriptRoot 'sherpa-onnx\hr\tables\current') -File -ErrorAction SilentlyContinue |
-            Where-Object Name -ne 'hotwords.txt' |
-            Remove-Item -Force -ErrorAction SilentlyContinue
+        # current 下 default 表的热词文件也随数据清空
         $hw = Join-Path $PSScriptRoot 'sherpa-onnx\hr\tables\current\hotwords.txt'
         if (Test-Path $hw) { [System.IO.File]::WriteAllText($hw, '', [System.Text.UTF8Encoding]::new($false)) }
-        Write-Host "OK    已还原干净（数据表注册表/向量索引/聚合热词已重置）"
+        Write-Host "OK    已还原干净（数据表注册表/向量索引/热词文件已重置）"
     }
 
     Write-Host "OK    服务已停止。"

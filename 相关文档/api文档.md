@@ -1,4 +1,4 @@
-# VoiceTableAssist API 文档——接口说明
+﻿# VoiceTableAssist API 文档——接口说明
 
 ## 一、概述
 
@@ -34,27 +34,33 @@
 {
   "status": "ok",
   "service": "voice-table-assist",
-  "provider": "sherpa",
+  "provider": "sherpa-inproc",
   "configured": true,
   "ranerModelDir": "D:\\app\\voice-table-assist\\models",
   "activeTable": "default",
+  "asrReady": true,
+  "asrVersion": "1.13.6",
+  "asrError": null,
   "provider_version": "1"
 }
 ```
 
 | 字段 | 说明 |
 |---|---|
-| `provider` | ASR 类型，固定为 `sherpa` |
+| `provider` | ASR 类型，固定为 `sherpa-inproc`（sherpa-onnx **进程内** P/Invoke，无子进程/端口） |
 | `configured` | `true`=可用 |
 | `activeTable` | 当前活动表名；`null`=已卸载（再查询自动重载） |
 | `modelsLoaded` | 懒加载状态：`false`=模型未驻内存；`true`=已加载 |
+| `asrReady` | 语音识别器是否已常驻加载完成（`false` 时语音连接会先下发 `loading` 并等待加载） |
+| `asrVersion` | 原生 sherpa-onnx 版本（未加载为 `?`） |
+| `asrError` | 最近一次识别器加载失败原因；`null`=正常 |
 
 ### 2. `GET /healthz`（兼容别名）
 
 **200 响应示例**
 
 ```json
-{ "status": "ok", "modelDir": "...", "mode": "RaNER+gte-base-zh", "provider": "sherpa", "configured": true, "activeTable": "default" }
+{ "status": "ok", "modelDir": "...", "mode": "RaNER+gte-base-zh", "provider": "sherpa-inproc", "configured": true, "activeTable": "default", "asrReady": true, "asrVersion": "1.13.6" }
 ```
 
 ---
@@ -247,7 +253,9 @@
 
 ### 1. `POST /api/table/voice`
 
-依据表结构重建 `hotwords.txt` + `hr_rules.txt`。`/import_table` 已在进程内直调同一逻辑。
+依据表结构重建 `hotwords.txt`（行标签 + 列描述符 + 单字数字加权，**刻意不含「十」**，避免「一点二」被压成「十二」）。`/import_table` 已在进程内直调同一逻辑。
+
+> 表内同音纠错不再落地规则文件：识别文本按**表内读音吸附**（识别文本的"主体/位置"按读音吸附回本表行标签与列说法，忽略声调/前后鼻音/平翘舌/n-l/f-h/音节编辑距离≤1，带阈值与次优差距守卫）自动纠错，换表自动生效，零人工维护。
 
 **请求示例**
 
@@ -271,7 +279,9 @@
 
 | 状态码 | 场景 |
 |---|---|
-| `400` | 字符拼音表缺失，返回 `{ "error": "char-pinyin 表缺失: ..." }` |
+| `400` | 热词资源写盘失败等，返回 `{ "error": "<message>" }` |
+
+> 字符拼音表（`Align:CharPinyin`）缺失不影响本接口：仅关闭表内读音吸附（识别文本退化为仅通用数字同音归一）。
 
 ---
 
@@ -292,7 +302,7 @@
 
 | 帧类型 | 内容 |
 |---|---|
-| 二进制帧 | float32 PCM，`16kHz`，服务端原样透传给 sherpa |
+| 二进制帧 | float32 PCM，`16kHz`，服务端直接喂给进程内 sherpa 识别器（启用降噪时先过 GTCRN） |
 | 文本帧 | `{ "type": "stop" }`，结束本次识别 |
 
 **下行帧（服务 → 浏览器）**
@@ -319,12 +329,12 @@
 | 配置项 | 默认值 | 说明 |
 |---|---|---|
 | `Models:LazyLoad` | `true` | 语义引擎（RaNER/gte）按需加载；`false`=启动即加载 |
-| `Models:IdleUnloadSeconds` | 代码 30s，随包 `180` | 语义引擎空闲多少秒自动卸载。**sherpa 语音模型常驻不卸载**（随服务启动后台拉起） |
+| `Models:IdleUnloadSeconds` | 代码 30s，随包 `180` | 语义引擎空闲多少秒自动卸载。**sherpa 识别器常驻不卸载**（进程内，随服务启动后台加载） |
 
 **行为**：
 
 1. 语义引擎不随服务启动常驻（待机内存约 300MB），首次 WS 连接或首次文本查询时自动加载（RaNER/gte 约 1.5~2s），期间下发 `loading` 帧；空闲达到阈值且无活跃语音会话时自动卸载。
-2. **sherpa 语音模型常驻**：随服务启动后台拉起（约 8s，期间下发 `loading` 帧），空闲不卸载（待机即 600~700MB），保证语音随时可用。
+2. **sherpa 识别器常驻**：进程内随服务启动后台加载（约 8s，期间下发 `loading` 帧），空闲不卸载，保证语音随时可用；热词**按表随流传入**，导入/切表不需要重建识别器。
 
 ### 3. 错误帧
 
@@ -334,13 +344,13 @@
 
 | 错误码 | 含义 |
 |---|---|
-| `ASR_CONNECTION` | sherpa 连接异常 |
+| `ASR_CONNECTION` | 语音识别异常（识别器加载失败/原生库缺失等） |
 | `PARSE_FAILED` | 解析失败 |
 | `ACCUM_OVERFLOW` | 累积文本超过 `Interaction:MaxChars` 上限，服务端清空；`voice-mic.js` 收到后立即断开会话并释放麦克风 |
 
 ### 4. 服务端交互编排
 
-服务端自动完成：流式文本合并 → **sherpa 端点检测（说完停顿约 2 秒切句输出 final）** → 300ms 后 RaNER 解析 → 下发 `cells`。客户端也可发 `{"type":"stop"}` 立即提交。
+服务端自动完成：进程内 sherpa 流式识别 → 文本合并（通用数字同音归一 + 表内读音吸附）→ **端点检测（说完停顿约 2 秒切句输出 final）** → 300ms 后 RaNER 解析 → 下发 `cells`。客户端也可发 `{"type":"stop"}` 立即提交。
 
 **配置项**
 
@@ -400,7 +410,7 @@
 | `404` | 查询未导入的表（`/text_to_json` 或 WS 指定 `?table=`） |
 | `422` | `/api/speech/ner` 无法解析出有效三元组 |
 | `500` | 后端推理/处理异常 |
-| `503` | sherpa-onnx 子进程未就绪 / 启动失败 |
+| `503` | 进程内 sherpa 识别器未就绪 / 加载失败（详见 `/api/health` 的 `asrReady`/`asrError`） |
 
 ---
 
@@ -416,7 +426,19 @@
 
 ## 十四、更新记录
 
-### 1. 2026-09-01 语音链路修复与部署固化
+### 1. 2026-09-16 语音识别改为进程内（P/Invoke）+ 热词按流传入
+
+| 项 | 说明 |
+|---|---|
+| 架构变化 | 去掉 `sherpa-onnx-online-websocket-server.exe` 子进程与上游 WS：改为 **P/Invoke 直调 sherpa-onnx C API（v1.13.6，`Asr/SherpaNative.cs`）**，识别器进程内常驻（`Asr/SherpaRecognizer.cs`），模型与解码参数不变；随包的 server exe 已**删除**（发布脚本同步） |
+| 建模单元 | 默认 `cjkchar`（对齐安卓 `asrModelingUnit`）；需 bbpe 时必须同时配 `SherpaServer:BpeVocab=<bpe.model>`，缺 bpe.model 时服务端**直接拒绝加载并给出可读错误**（不会原生崩溃） |
+| 热词 | **按流传入**（`CreateStream(hotwords)`，`Asr/TableVoiceResourceGenerator.BuildHotWordsStream`，'/' 分隔）：导入/切表**不需要重启**、无"重启期间语音不可用"；不再聚合所有表热词 |
+| 纠错链路 | 通用数字同音归一 + 表内读音吸附，partial/final 都纠、提交前再吸附一次（喂 NER 前） |
+| 端点/收尾 | 端点规则仍在识别器配置里（rule1/2/3 同阈值 2s）；`stop` 走 `InputFinished` + 排空解码 + 最后一句 final 后提交 |
+| 配置 | `SherpaServer:NativeDir/ModelingUnit/BpeVocab/Provider/MaxActivePaths` 新增；`ExePath/Port/HotwordsFile/StartupTimeoutSeconds` 移除；`/api/health` 新增 `asrReady/asrVersion/asrError`，`provider=sherpa-inproc` |
+| 原生依赖顺序 | 启动即预载 sherpa 自带 onnxruntime(1.27)，再加载 Microsoft.ML.OnnxRuntime(1.20)：同名原生模块在 Windows 上"先入进程者被绑定"，顺序反了 sherpa 会加载失败 |
+
+### 2. 2026-09-01 语音链路修复与部署固化
 
 | 项 | 说明 |
 |---|---|

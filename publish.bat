@@ -129,6 +129,12 @@ echo ==^> Create sherpa hotwords placeholder file ...
 if exist "%PUBLISH%models\sherpa-onnx" set "SHERPA_OUT=%PUBLISH%models\sherpa-onnx"
 if exist "%PUBLISH%sherpa-onnx"        set "SHERPA_OUT=%PUBLISH%sherpa-onnx"
 if defined SHERPA_OUT (
+    REM sherpa 已改为进程内识别（P/Invoke c-api.dll）：server exe 不再需要，即使本机 models/ 里
+    REM 还留着旧文件也不入包，保证发布包与安卓方案一致。
+    if exist "!SHERPA_OUT!\sherpa-onnx-online-websocket-server.exe" (
+        del /F /Q "!SHERPA_OUT!\sherpa-onnx-online-websocket-server.exe"
+        echo        removed sherpa-onnx-online-websocket-server.exe
+    )
     if not exist "!SHERPA_OUT!\hr\tables\current" mkdir "!SHERPA_OUT!\hr\tables\current"
     break>"!SHERPA_OUT!\hr\tables\current\hotwords.txt"
 ) else (

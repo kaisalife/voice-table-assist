@@ -3,15 +3,25 @@ using System.Text;
 namespace VoiceTableAssist.Asr;
 
 /// <summary>
-/// 按"导入的表格模板"生成两块语音特化资源（纯文本、由表驱动，替代原 hardcode 的 hotwords/规则）：
-///  1. hotwords.txt    —— 送入 sherpa-onnx --hotwords-file（解码 bias），含行标签 + 列描述符；
-///  2. hr_rules.txt    —— 送入 HomophoneReplacer（拼音=汉字），把识别文本里的同音错字纠正为本表行标签。
-/// 均无需编译 FST / 无需 Python，运行期仅由 .NET 生成。
+/// 按"导入的表格模板"生成语音特化资源（纯文本、由表驱动，零人工维护）：
+///   hotwords.txt —— 送入 sherpa-onnx --hotwords-file（解码 bias），含行标签 + 列描述符 + 单字数字。
+/// 表内同音纠错不再落地规则文件：由 <see cref="SoundAligner"/>（表内读音吸附，词表 = 行标签 + 列说法）
+/// 在识别文本上按读音吸附，覆盖原 hr_rules（只认拼音完全相同）的全部能力，且换表自动生效。
 /// </summary>
 internal static class TableVoiceResourceGenerator
 {
     private static readonly string[] ChDigits =
         ["零", "一", "二", "三", "四", "五", "六", "七", "八", "九", "十"];
+
+    /// <summary>
+    /// 参与热词加权的单字数字：**刻意不含"十"**。
+    /// "十"与"点"在同一段声学上是竞争候选（「二号一点二」会被听成「二号十二」）：
+    /// 给"十"同样 bonus 会把"一+点"路径压掉，"点"就丢了（18 条小数用例 A/B：含十 14/18 → 去十 18/18；
+    /// 五十/十五点二/二十/一百 等含"十"读法无回归，靠声学即可读对）。
+    /// "十"的同音（实/石/时）由 <see cref="DomainCorrection"/> 在文本层归一，不依赖热词。
+    /// </summary>
+    private static readonly string[] HotwordDigits =
+        ["零", "一", "二", "三", "四", "五", "六", "七", "八", "九"];
 
     public static string ToChineseNum(int n)
     {
@@ -25,7 +35,7 @@ internal static class TableVoiceResourceGenerator
 
     /// <summary>
     /// 固定列描述符短语族（测量值X / X号 / 第X个 / 第X列 / 序号X / X号列）。
-    /// 与行标签无关，始终按 columnCount 生成，避免语音读错。
+    /// 与行标签无关，始终按 columnCount 生成，避免语音读错；同时作为表内读音吸附的位置词表。
     /// </summary>
     public static IReadOnlyList<string> ColumnDescriptors(int columnCount)
     {
@@ -54,7 +64,7 @@ internal static class TableVoiceResourceGenerator
     /// 生成热词文本。rows 为行标签（检验内容）；columnCount 为列数。
     /// sherpa 热词按"字级 token"解析：每个汉字之间必须用空格分隔（如「一 号」），整行连写映射不到 token。
     /// 模型词表无 ASCII 数字，识别也不可能输出「1号」——含非汉字字符的短语直接跳过。
-    /// 无论何种表，都会固定加入 X号/第X个/第X列 等列描述符短语与单字数字。
+    /// 无论何种表，都会固定加入 X号/第X个/第X列 等列描述符短语与单字数字（不含"十"，见 HotwordDigits）。
     /// </summary>
     public static string BuildHotWords(IReadOnlyList<string> rows, int columnCount)
     {
@@ -72,65 +82,35 @@ internal static class TableVoiceResourceGenerator
         foreach (var desc in ColumnDescriptors(columnCount))
             AppendPhrase(desc);
 
-        // 单字数字 / 小数点加权，对抗同音（如 五→武）
-        foreach (var ch in ChDigits) sb.AppendLine(ch);
+        // 单字数字 / 小数点加权，对抗同音（如 五→武）；"十"刻意不加权（见 HotwordDigits）
+        foreach (var ch in HotwordDigits) sb.AppendLine(ch);
         sb.AppendLine("点");
-        sb.AppendLine("零");
         return sb.ToString();
     }
 
-    /// <summary>
-    /// 生成同音替换规则文本（每行 拼音=汉字）。给每个行标签生成"正确拼音=正确标签"；
-    /// 若 columnCount&gt;0，额外固定加入列描述符（测量值X/X号/第X个/第X列/序号X/X号列）的恒等规则，
-    /// 使 ASR 把它们读成同音错字时能纠正回目标写法（需要拼音表含对应同音字）。
-    /// 最后追加 commonRulesPath 的跨表通用近音规则。
-    /// </summary>
-    public static string BuildRules(
-        HomophoneReplacer lexicon,
-        IReadOnlyList<string> rows,
-        string? commonRulesPath = null,
-        int columnCount = 0)
-    {
-        var seen = new HashSet<string>(StringComparer.Ordinal);
-        var sb = new StringBuilder();
-        foreach (var r in rows)
-        {
-            var label = r.Trim();
-            if (label.Length == 0) continue;
-            var key = lexicon.ToTone3Pinyin(label);
-            if (key.Length == 0 || seen.Contains(key)) continue;
-            seen.Add(key);
-            sb.Append(key).Append('=').Append(label).AppendLine();
-        }
-
-        // 固定列描述符恒等规则：拼音=目标写法
-        foreach (var desc in ColumnDescriptors(columnCount))
-        {
-            var key = lexicon.ToTone3Pinyin(desc);
-            if (key.Length == 0 || seen.Contains(key)) continue;
-            seen.Add(key);
-            sb.Append(key).Append('=').Append(desc).AppendLine();
-        }
-
-        if (!string.IsNullOrEmpty(commonRulesPath) && File.Exists(commonRulesPath))
-            foreach (var line in File.ReadLines(commonRulesPath, Encoding.UTF8))
-                if (!string.IsNullOrWhiteSpace(line))
-                    sb.AppendLine(line.Trim());
-
-        return sb.ToString();
-    }
-
-    /// <summary>把生成内容写到磁盘（按表目录隔离）。</summary>
-    public static void Write(string hotWordsText, string rulesText, string tableDir)
+    /// <summary>把生成的热词写到磁盘（按表目录隔离）。仅供运维/排障查看——
+    /// 运行时热词按流经 <see cref="BuildHotWordsStream"/> 直传 sherpa，不再从文件加载。</summary>
+    public static void WriteHotWords(string hotWordsText, string tableDir)
     {
         Directory.CreateDirectory(tableDir);
         File.WriteAllText(Path.Combine(tableDir, "hotwords.txt"), hotWordsText, new UTF8Encoding(false));
-        File.WriteAllText(Path.Combine(tableDir, "hr_rules.txt"), rulesText, new UTF8Encoding(false));
     }
 
     /// <summary>
-    /// 依据配置重建语音资源（hotwords.txt + hr_rules.txt）到指定表目录（tables/{key}，default→tables/current 兼容）。
-    /// 供 /import_table（进程内直调）与 /api/table/voice 共用。
+    /// 生成**按流传入**的热词串：内容与 <see cref="BuildHotWords"/> 完全一致，
+    /// 只是把多行用 '/' 连成一条串（sherpa <c>CreateStream(hotwords)</c> 的格式），
+    /// 供每通语音会话绑定"本表词表"——识别器常驻，切表/导入都不重建、不重启。
+    /// </summary>
+    public static string BuildHotWordsStream(IReadOnlyList<string> rows, int columnCount)
+    {
+        var text = BuildHotWords(rows, columnCount);
+        var parts = text.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        return string.Join('/', parts);
+    }
+
+    /// <summary>
+    /// 依据配置重建语音资源（hotwords.txt，仅供运维查看）到指定表目录（tables/{key}，default→current 兼容）。
+    /// 运行时热词按流传入，因此这里**不需要**任何进程重启。
     /// </summary>
     public static (bool Ok, string? Error, string? TableDir) Rebuild(
         IConfiguration configuration,
@@ -144,49 +124,22 @@ internal static class TableVoiceResourceGenerator
             return Path.IsPathRooted(p) ? p : Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, p));
         }
 
-        var charPinyin = Resolve(configuration, "Homophone:CharPinyin", "sherpa-onnx/hr/hr_char_pinyin.txt");
-        var common = Resolve(configuration, "Homophone:CommonRules", "sherpa-onnx/hr/hr_common_rules.txt");
+        var currentDir = Resolve(configuration, "Tables:HrCurrentDir", "sherpa-onnx/hr/tables/current");
 
-        // 目标目录：default 表 → 旧 tables/current（向后兼容）；其余 → tables/{key}
+        // 目标目录：default 表 → tables/current（历史路径，兼容旧部署）；其余 → tables/{key}
         var tableDir = KeyIsDefault(tableKey)
-            ? Resolve(configuration, "Homophone:TableDir", "sherpa-onnx/hr/tables/current")
+            ? currentDir
             : Path.Combine(Resolve(configuration, "Tables:HrBaseDir", "sherpa-onnx/hr/tables"), tableKey!);
 
-        // 热词始终生成；hr_rules（同音纠正）仅在拼音表可用时生成，缺失时只走热词加权
-        var hotWords = BuildHotWords(rows, columnCount);
-        if (File.Exists(charPinyin))
+        try
         {
-            var rules = BuildRules(new HomophoneReplacer(charPinyin), rows, common, columnCount);
-            Write(hotWords, rules, tableDir);
+            WriteHotWords(BuildHotWords(rows, columnCount), tableDir);
+            return (true, null, tableDir);
         }
-        else
+        catch (Exception ex)
         {
-            Directory.CreateDirectory(tableDir);
-            File.WriteAllText(Path.Combine(tableDir, "hotwords.txt"), hotWords, new UTF8Encoding(false));
+            return (false, ex.Message, tableDir);
         }
-
-        // sherpa 仅在进程启动时读一次热词文件，且只会加载 tables/current/hotwords.txt 一个文件——
-        // 把所有已导入表的热词聚合写入该文件（去重），配合导入后的进程重启，切表时解码偏置始终覆盖全部行标签。
-        AggregateHotwords(Path.GetDirectoryName(tableDir)!, Resolve(configuration, "Homophone:TableDir", "sherpa-onnx/hr/tables/current"));
-
-        return (true, null, tableDir);
-    }
-
-    /// <summary>合并 tables/ 下所有表的 hotwords.txt（去重）写入 sherpa 启动加载的 current 目录。</summary>
-    private static void AggregateHotwords(string tablesRoot, string currentDir)
-    {
-        var merged = new SortedSet<string>(StringComparer.Ordinal);
-        if (Directory.Exists(tablesRoot))
-        {
-            foreach (var file in Directory.EnumerateFiles(tablesRoot, "hotwords.txt", SearchOption.AllDirectories))
-                foreach (var line in File.ReadLines(file, Encoding.UTF8))
-                {
-                    var s = line.Trim();
-                    if (s.Length > 0 && !s.StartsWith('#')) merged.Add(s);
-                }
-        }
-        Directory.CreateDirectory(currentDir);
-        File.WriteAllText(Path.Combine(currentDir, "hotwords.txt"), string.Concat(merged.Select(l => l + "\n")), new UTF8Encoding(false));
     }
 
     private static bool KeyIsDefault(string? key) =>

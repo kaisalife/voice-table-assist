@@ -24,13 +24,14 @@ internal sealed class VoiceInteractionSession : IDisposable
     private readonly ILogger _logger;
     private readonly object _gate = new();
     private readonly string _tableKey;
+    private readonly SoundAligner? _aligner;        // 表内读音吸附（提交前纠错，喂 NER 之前）
     private string _accumulated = "";
     private CancellationTokenSource? _timerCts;
 
     public VoiceInteractionSession(
         EngineHost host, TableVectorManager manager, TimeSpan silence,
         ConnectionSender sender, ILogger logger, int maxChars,
-        string tableKey)
+        string tableKey, SoundAligner? aligner = null)
     {
         _host = host;
         _manager = manager;
@@ -39,6 +40,7 @@ internal sealed class VoiceInteractionSession : IDisposable
         _logger = logger;
         _maxChars = maxChars;
         _tableKey = tableKey;
+        _aligner = aligner;
     }
 
     /// <summary>当前累计文本（线程安全快照；提交/溢出清空后为空串）。</summary>
@@ -153,13 +155,26 @@ internal sealed class VoiceInteractionSession : IDisposable
         lock (_gate) { text = _accumulated.Trim(); }
         if (text.Length == 0) return;
 
+        // 表内读音吸附（在 NER 之前）：RaNER 用正确行名训练，先按读音把听错的片段吸附回本表规范写法
+        // （词表 = 本表行标签 + 列说法，自动生成），NER 才抽得出主体/位置。
+        var submitted = text;
+        if (_aligner is { Ready: true })
+        {
+            var aligned = _aligner.AlignSentence(submitted);
+            if (aligned != submitted)
+            {
+                _logger.LogInformation("[ALIGN] 提交文本吸附: \"{Prev}\" → \"{Next}\"", submitted, aligned);
+                submitted = aligned;
+            }
+        }
+
         try
         {
             // 单连接门卫保证整个会话期间全局活动表就是本会话绑定的表：
             // 握手已同步 Activate（唯一会话，活动表不会中途被别的连接切走），提交时直接查当前活动索引。
             _host.Touch();
             var idx = _manager.ActiveIndex;
-            var bio = _host.Raner.Predict(text);
+            var bio = _host.Raner.Predict(submitted);
             var triples = TripleExtractor.Extract(bio);
             var cells = new List<CellDto>();
             foreach (var (sub, obj, val) in triples)
@@ -168,7 +183,7 @@ internal sealed class VoiceInteractionSession : IDisposable
                 if (row <= 0) continue;   // 向量检索低置信未命中，跳过该格
                 cells.Add(new CellDto { row = row, column = col, values = ChineseNumeral.ToDecimal(val) });
             }
-            await _sender.SendAsync(new BrowserEvent("cells", Text: text, IsFinal: true, Cells: cells), cancellationToken);
+            await _sender.SendAsync(new BrowserEvent("cells", Text: submitted, IsFinal: true, Cells: cells), cancellationToken);
 
             // 累计精简：把"最后一个完整三元组 (Sub,Obj,Val)"反拼回字符串作为下一轮前缀，
             // 原始累计清空。这样下一段语音补说"三号十一点一一"时，主体 Sub（如"硬度"）
@@ -195,7 +210,7 @@ internal sealed class VoiceInteractionSession : IDisposable
         catch (OperationCanceledException) { throw; }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "语音交互解析失败: {Text}", text);
+            _logger.LogWarning(ex, "语音交互解析失败: {Text}", submitted);
             await _sender.SendAsync(new BrowserEvent("error", Code: "PARSE_FAILED", Message: $"解析失败：{ex.Message}"), CancellationToken.None);
         }
     }
@@ -240,7 +255,7 @@ internal sealed class ConnectionSender : IDisposable
     /// <summary>按配置构造每连接会话的工厂（绑定连接的表；索引取全局活动表，由单连接门卫保证一致）。</summary>
     public static Func<ConnectionSender, VoiceInteractionSession> CreateFactory(
         IConfiguration configuration, IServiceProvider services, ILogger logger,
-        string tableKey)
+        string tableKey, SoundAligner? aligner = null)
     {
         var ms = configuration["Interaction:SilenceMs"];
         if (!int.TryParse(ms, out var silenceMs) || silenceMs <= 0) silenceMs = 2500;
@@ -252,6 +267,6 @@ internal sealed class ConnectionSender : IDisposable
         return sender => new VoiceInteractionSession(
             services.GetRequiredService<EngineHost>(),
             services.GetRequiredService<TableVectorManager>(),
-            silence, sender, logger, maxChars, tableKey);
+            silence, sender, logger, maxChars, tableKey, aligner);
     }
 }

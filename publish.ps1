@@ -32,6 +32,11 @@ finally { Pop-Location }
 Write-Host '==> 拷贝模型资源 models/ (raner + embedding + asr)'
 New-Item -ItemType Directory -Force -Path (Join-Path $publish 'models') | Out-Null
 Copy-Item -Recurse -Force (Join-Path $modelsSrc '*') (Join-Path $publish 'models')
+
+# sherpa 已改为进程内识别（P/Invoke c-api.dll）：不再需要 online-websocket-server.exe，
+# 即使本机 models/ 里还留着旧文件也不入包，保证发布包与安卓方案一致（无 server exe）。
+Get-ChildItem (Join-Path $publish 'models') -Recurse -File -Filter 'sherpa-onnx-online-websocket-server.exe' |
+    ForEach-Object { Remove-Item -Force $_.FullName; Write-Host "==> 已剔除 server exe: $($_.Name)" }
 # 模型原始压缩包（下载原件，如 asr 的 *.zip）运行不需要，不入包（单此一项省 550MB+）
 Get-ChildItem (Join-Path $publish 'models') -Recurse -File -Include *.zip, *.tar.bz2, *.tar.gz |
     Remove-Item -Force
@@ -53,13 +58,14 @@ if (Test-Path $gtcrn) {
 $embTables = Join-Path $publish 'models\embedding\tables'
 if (Test-Path $embTables) { Remove-Item -Recurse -Force $embTables }
 
-# sherpa-onnx 原生运行时已归档在 models/sherpa-onnx（随上面 models 拷贝自动带上，ExePath 指向此处）；
-# 这里只补 hr 热词占位：sherpa 启动要求热词文件存在（缺失会直接退出，服务端亦有自愈创建）
+# sherpa-onnx 原生运行时已归档在 models/sherpa-onnx（随上面 models 拷贝自动带上，NativeDir 指向此处）：
+# 识别在网关进程内（P/Invoke，c-api.dll），热词按表随流传入、不读文件——
+# 这里预置一个空热词文件仅为运维查看/历史兼容（运行时不依赖它）。
 $hrCurrent = Join-Path $publish 'sherpa-onnx\hr\tables\current'
 New-Item -ItemType Directory -Force -Path $hrCurrent | Out-Null
 if (-not (Test-Path (Join-Path $hrCurrent 'hotwords.txt'))) {
     [System.IO.File]::WriteAllText((Join-Path $hrCurrent 'hotwords.txt'), '', [System.Text.UTF8Encoding]::new($false))
-    Write-Host '==> 已预置空热词文件 sherpa-onnx/hr/tables/current/hotwords.txt'
+    Write-Host '==> 已预置空热词文件 sherpa-onnx/hr/tables/current/hotwords.txt（仅供查看）'
 }
 
 # ASR 模型仅 float32（int8 已移除）。

@@ -1,4 +1,4 @@
-@echo off
+﻿@echo off
 REM ============================================================================
 REM  deploy-check.bat - Deployment smoke-checker (start temp, stop on exit)
 REM  Pure batch (no PowerShell). Works on Chinese Windows:
@@ -12,11 +12,11 @@ REM      /KEEPALIVE N      After ready, keep service alive N sec then exit
 REM                        (CI / unattended mode; default 60s when SELFTEST)
 REM ============================================================================
 REM  Guarantee: on ANY exit path (normal / Ctrl+C / fail) the script first
-REM  tries to kill VoiceTableAssist.exe + sherpa-onnx-online-websocket-server.exe
-REM  started by this run (double taskkill /F + /T; SIG-file fence to avoid wiping
-REM  stale processes that share the exe name). SELFTEST mode ALSO wipes
-REM  aggregated tables/hotwords under models/embedding/tables and
-REM  sherpa-onnx/hr/tables/* (keep current/hotwords.txt truncated).
+REM  tries to kill VoiceTableAssist.exe started by this run (double taskkill /F
+REM  + /T; SIG-file fence to avoid wiping stale processes that share the exe
+REM  name; sherpa-onnx 现在跑在网关进程内，没有子进程要清). SELFTEST mode ALSO
+REM  wipes imported tables under models/embedding/tables and per-table hotword
+REM  files under sherpa-onnx/hr/tables/* (keep current/hotwords.txt truncated).
 REM ============================================================================
 setlocal EnableExtensions EnableDelayedExpansion
 REM Capture %~dp0 BEFORE the arg-parse loop: `shift` moves %0 as well, so
@@ -69,43 +69,30 @@ echo NOTE:   If Windows blocks VoiceTableAssist.exe on first run, right-click
 echo         the exe ^(or the zip before extracting^), open Properties, and
 echo         check "Unblock". This BAT cannot automate that step from cmd.
 
-REM ===== 2) sherpa-onnx native deps (--help launch + DLL list) =====
+REM ===== 2) sherpa-onnx native deps (in-process P/Invoke: DLLs only, no server exe) =====
 echo ==^> sherpa-onnx runtime deps ...
 set "SHERPA_DIR="
-if exist "%ROOT%sherpa-onnx\sherpa-onnx-online-websocket-server.exe" (
+if exist "%ROOT%sherpa-onnx\sherpa-onnx-c-api.dll" (
     set "SHERPA_DIR=%ROOT%sherpa-onnx"
-) else if exist "%ROOT%models\sherpa-onnx\sherpa-onnx-online-websocket-server.exe" (
+) else if exist "%ROOT%models\sherpa-onnx\sherpa-onnx-c-api.dll" (
     set "SHERPA_DIR=%ROOT%models\sherpa-onnx"
 )
 if not defined SHERPA_DIR (
-    echo FAIL    sherpa-onnx-online-websocket-server.exe not found.
+    echo FAIL    sherpa-onnx-c-api.dll not found.
     echo         Expected at %ROOT%sherpa-onnx\  or  %ROOT%models\sherpa-onnx\
     goto :fail
 )
 echo         SHERPA_DIR=!SHERPA_DIR!
 
-echo ==^> Running sherpa server --help (exit must be 0)...
-set "SHERPA_HELP_TMP=%TEMP%\sherpa-help-%RANDOM%.log"
-"!SHERPA_DIR!\sherpa-onnx-online-websocket-server.exe" --help >"%SHERPA_HELP_TMP%" 2>&1
-set "HELP_RC=!ERRORLEVEL!"
-del "%SHERPA_HELP_TMP%" 2>NUL
-if not "!HELP_RC!"=="0" (
-    echo WARN    sherpa server --help exit !HELP_RC!; typical causes: missing VC++ / DX / dbghelp DLLs.
-    echo         DLL status table:
-    for %%D in (dxgi.dll msvcp140.dll vcruntime140.dll concrt140.dll
-                dbghelp.dll SETUPAPI.dll WS2_32.dll MSWSOCK.dll) do (
-        if exist "%SystemRoot%\System32\%%D" (echo         OK     %%D) else (echo         MISS   %%D)
-    )
-    echo FAIL    Please install latest VC++ 2015-2022 x64 redist and retry.
-    goto :fail
+echo ==^> VC++ 2015-2022 x64 runtime (required by sherpa-onnx-c-api.dll):
+for %%D in (msvcp140.dll vcruntime140.dll vcruntime140_1.dll) do (
+    if exist "%SystemRoot%\System32\%%D" (echo         OK     %%D) else (echo         MISS   %%D)
 )
 
-echo ==^> 4 sherpa runtime DLLs next to server exe:
+echo ==^> sherpa runtime DLLs (in-process recognition needs c-api + onnxruntime):
 set "SHERPA_DLLS_MISS="
 for %%D in (onnxruntime.dll
-            onnxruntime_providers_shared.dll
-            sherpa-onnx-c-api.dll
-            sherpa-onnx-cxx-api.dll) do (
+            sherpa-onnx-c-api.dll) do (
     if exist "!SHERPA_DIR!\%%D" (echo         OK     %%D) else (
         echo         MISS   %%D
         set "SHERPA_DLLS_MISS=!SHERPA_DLLS_MISS! %%D"
@@ -113,6 +100,7 @@ for %%D in (onnxruntime.dll
 )
 if defined SHERPA_DLLS_MISS (
     echo FAIL    sherpa DLLs missing:!SHERPA_DLLS_MISS!.
+    echo         Install latest VC++ 2015-2022 x64 redist and re-extract the package.
     goto :fail
 )
 
@@ -135,9 +123,9 @@ if defined INTEG_MISS (
 
 set "HOTWORDS=!SHERPA_DIR!\hr\tables\current\hotwords.txt"
 if exist "!HOTWORDS!" (
-    echo         OK     !HOTWORDS!
+    echo         OK     !HOTWORDS! ^(for ops inspection only^)
 ) else (
-    echo WARN    !HOTWORDS! missing; create it as empty ^(this BAT will auto-create later^).
+    echo NOTE   !HOTWORDS! absent; hotwords are passed per-stream at runtime, no file needed.
 )
 
 REM ===== 5) Port pre-check =====
@@ -250,25 +238,22 @@ exit /b 0
 
 REM ==========================================================================
 REM Sub: cleanup - kill processes started by THIS run (SIG-file fence),
-REM                and (in SELFTEST) wipe aggregated tables/hotwords.
+REM                and (in SELFTEST) wipe imported tables/hotword files.
 REM ==========================================================================
 :cleanup
 if "%PROC_RUN%"=="1" (
-    echo ==^> Cleanup: stop VoiceTableAssist.exe and sherpa server ...
+    echo ==^> Cleanup: stop VoiceTableAssist.exe ...
     if defined PID (
         taskkill /F /PID %PID% /T >NUL 2>&1
         ping -n 2 127.0.0.1 >NUL
         taskkill /F /PID %PID% /T >NUL 2>&1
     )
     taskkill /F /IM VoiceTableAssist.exe /T >NUL 2>&1
-    taskkill /F /IM sherpa-onnx-online-websocket-server.exe /T >NUL 2>&1
     ping -n 3 127.0.0.1 >NUL
     taskkill /F /IM VoiceTableAssist.exe /T >NUL 2>&1
-    taskkill /F /IM sherpa-onnx-online-websocket-server.exe /T >NUL 2>&1
 ) else (
     REM Start never happened; fence just in case.
     taskkill /F /IM VoiceTableAssist.exe /T >NUL 2>&1
-    taskkill /F /IM sherpa-onnx-online-websocket-server.exe /T >NUL 2>&1
 )
 
 REM SELFTEST wipe extracted to :wipeTestData - keeps this subroutine free of
@@ -279,11 +264,11 @@ if exist "%SIG%" del /F /Q "%SIG%" 2>NUL
 exit /b
 
 REM ==========================================================================
-REM Sub: wipeTestData - SELFTEST only: wipe aggregated tables + hotwords so the
+REM Sub: wipeTestData - SELFTEST only: wipe imported tables + hotword files so the
 REM      next run starts clean. Flat structure on purpose (no deep nesting).
 REM ==========================================================================
 :wipeTestData
-echo ==^> SELFTEST: wipe aggregated tables + truncate hotwords ...
+echo ==^> SELFTEST: wipe imported tables + truncate hotword files ...
 if exist "%ROOT%models\embedding\tables" rmdir /S /Q "%ROOT%models\embedding\tables" 2>NUL
 if defined SHERPA_DIR (
     if exist "!SHERPA_DIR!\hr\tables" (

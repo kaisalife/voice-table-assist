@@ -5,9 +5,9 @@ namespace VoiceTableAssist.Services;
 
 /// <summary>
 /// 引擎宿主：RaNER + gte-base-zh 语义引擎按需加载、空闲卸载（默认 30s，Models:IdleUnloadSeconds 可配）。
-/// 语音模型（sherpa-onnx）常驻：随服务启动后台拉起、不随空闲卸载停止（由 SherpaServerManager 托管）。
+/// 语音模型（sherpa-onnx）常驻：进程内随服务启动后台加载、不随空闲卸载停止（由 SherpaRecognizerHost 托管）。
 /// 空闲判定：距最后一次使用（HTTP 查询 / WS 语音活动）超过阈值，且无活跃语音会话。
-/// 卸载动作：dispose 两个 ONNX 语义引擎（sherpa 子进程不受影响）。
+/// 卸载动作：dispose 两个 ONNX 语义引擎（sherpa 识别器常驻，不受影响）。
 /// </summary>
 internal sealed class EngineHost : IHostedService, IDisposable
 {
@@ -64,14 +64,13 @@ internal sealed class EngineHost : IHostedService, IDisposable
         }
     }
 
-    /// <summary>确保 sherpa-onnx 子进程已启动并就绪（语音模型常驻托管；进程意外退出后由此兜底重启）。</summary>
+    /// <summary>确保进程内 sherpa-onnx 识别器已加载（语音模型常驻；加载失败下轮重试）。</summary>
     public async Task EnsureSherpaAsync(Action<string>? progress = null)
     {
-        var sherpa = _services.GetService<SherpaServerManager>();
-        if (sherpa is null) return;
-        if (sherpa.IsRunning && sherpa.IsReady) { Touch(); return; }
-        progress?.Invoke("正在启动语音识别引擎（首次使用需数秒）...");
-        await sherpa.EnsureStartedAsync().ConfigureAwait(false);
+        var engine = _services.GetService<SherpaRecognizerHost>();
+        if (engine is null) return;
+        if (engine.IsReady) { Touch(); return; }
+        await engine.EnsureReadyAsync(progress).ConfigureAwait(false);
         Touch();
     }
 
@@ -123,14 +122,14 @@ internal sealed class EngineHost : IHostedService, IDisposable
         _idleCts = new CancellationTokenSource();
         _idleTimer = new PeriodicTimer(TimeSpan.FromSeconds(5));
         _ = Task.Run(() => IdleLoopAsync(_idleCts.Token));
-        // 语音模型（sherpa）常驻：由 SherpaServerManager 的 hosted 启动后台拉起，这里只管语义引擎的加载时机。
+        // 语音模型（sherpa）常驻：由 SherpaRecognizerHost 的 hosted 启动后台加载，这里只管语义引擎的加载时机。
         if (LazyLoad)
         {
             _lastTouchUtc = DateTime.UtcNow;
-            Console.WriteLine($"[MODELS] 语义引擎（RaNER/嵌入）懒加载：首次使用约 3~8s，空闲 {IdleUnloadSeconds}s 自动卸载；语音模型常驻（后台启动）");
+            Console.WriteLine($"[MODELS] 语义引擎（RaNER/嵌入）懒加载：首次使用约 3~8s，空闲 {IdleUnloadSeconds}s 自动卸载；语音模型常驻（进程内后台加载）");
             return Task.CompletedTask;
         }
-        Console.WriteLine("[MODELS] 语义引擎启动即加载（Models:LazyLoad=false）；语音模型常驻（后台启动）");
+        Console.WriteLine("[MODELS] 语义引擎启动即加载（Models:LazyLoad=false）；语音模型常驻（进程内后台加载）");
         return EnsureEnginesAsync(null);
     }
 

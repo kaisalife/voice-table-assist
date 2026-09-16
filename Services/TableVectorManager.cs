@@ -19,21 +19,18 @@ internal sealed class TableVectorManager
     private readonly IConfiguration _config;
     private readonly ILogger<TableVectorManager> _logger;
     private readonly TableRegistry _registry;
-    private readonly SherpaServerManager? _sherpa;
     private readonly SemaphoreSlim _lock = new(1, 1);
 
     private volatile VectorIndexData? _active;
     public volatile string? LastDatabase;
     private DateTime _lastActiveUtc;
 
-    public TableVectorManager(EngineHost host, ModelPaths paths, IConfiguration config, ILogger<TableVectorManager> logger,
-        SherpaServerManager? sherpa = null)
+    public TableVectorManager(EngineHost host, ModelPaths paths, IConfiguration config, ILogger<TableVectorManager> logger)
     {
         _host = host;
         _paths = paths;
         _config = config;
         _logger = logger;
-        _sherpa = sherpa;
         _registry = new TableRegistry(paths, logger);
     }
 
@@ -187,34 +184,9 @@ internal sealed class TableVectorManager
             return;
         }
 
-        // 热词已聚合到 tables/current/hotwords.txt，但 sherpa 仅在启动时读取——调度后台重启加载。
-        ScheduleSherpaRestart($"导入表 {name}");
-    }
-
-    private int _restartPending = 0;
-
-    /// <summary>
-    /// 调度一次 sherpa 重启（2 秒窗口内合并多次触发，如逐表导入/前端初始化）：
-    /// sherpa 仅在启动时读热词文件，需重启加载聚合后的最新解码偏置（约 7s，期间语音短暂不可用）。
-    /// </summary>
-    public void ScheduleSherpaRestart(string reason)
-    {
-        if (Interlocked.Exchange(ref _restartPending, 1) == 1) return;   // 已有重启在排队，合并
-        if (_sherpa == null) { Interlocked.Exchange(ref _restartPending, 0); return; }
-        _ = Task.Run(async () =>
-        {
-            try
-            {
-                await Task.Delay(2000).ConfigureAwait(false);   // 等待同批次导入/刷新全部完成后再重启
-                await _sherpa.RestartAsync().ConfigureAwait(false);
-                _logger.LogInformation("[VOICE] sherpa-onnx 已重启加载聚合热词（{Reason}）", reason);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "[VOICE] sherpa-onnx 重启失败（下次语音使用时会自动重试拉起）");
-            }
-            finally { Interlocked.Exchange(ref _restartPending, 0); }
-        });
+        // 热词按流（CreateStream(hotwords)）在会话建立时传入进程内识别器，导入即生效——
+        // 不需要重启 sherpa、也不存在"重启期间语音不可用"。这里落盘的 hotwords.txt 仅供运维查看。
+        _logger.LogInformation("[VOICE] 表 {Name} 本表热词已生成（{Rows}行/{Cols}列），下次连接即随流传入", name, rowLabels.Count, columnCount);
     }
 
     private VectorIndexData? LoadIndex(string key)

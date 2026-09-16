@@ -2,17 +2,8 @@ namespace VoiceTableAssist.Infrastructure;
 
 // --------------------------- 配置模型 ---------------------------
 
-/// <summary>本地 sherpa-onnx 流式识别服务配置。</summary>
-internal sealed record SherpaOptions(string Endpoint, int SampleRate)
-{
-    public static SherpaOptions From(IConfiguration configuration)
-    {
-        var section = configuration.GetSection("AsrProvider");
-        return new SherpaOptions(
-            section["Endpoint"] ?? "ws://127.0.0.1:6006",
-            section.GetValue("SampleRate", 16000));
-    }
-}
+// 注：ASR（sherpa-onnx）已改为进程内 P/Invoke，配置见 Asr/SherpaNativeOptions.cs（SherpaServer 段），
+// 不再有上游 WS 端点/端口/子进程可执行文件等配置项。
 
 /// <summary>
 /// 进程内 PCM 降噪配置（GTCRN）。仅作用于网关 -> sherpa-onnx 这一段上行音频。

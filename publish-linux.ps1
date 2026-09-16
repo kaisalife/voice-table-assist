@@ -56,13 +56,18 @@ Write-Host "==> 拷贝 Linux sherpa-onnx（来自 sherpa-linux/）"
 if (Test-Path $sherpaLx) {
     New-Item -ItemType Directory -Force -Path (Join-Path $outDir 'sherpa-onnx') | Out-Null
     Copy-Item -Recurse -Force (Join-Path $sherpaLx '*') (Join-Path $outDir 'sherpa-onnx')
+    # 进程内识别不需要 server exe；若 sherpa-linux/ 里混了 Windows 旧文件也一并剔除
+    Get-ChildItem (Join-Path $outDir 'sherpa-onnx') -Recurse -File |
+        Where-Object { $_.Name -in @('sherpa-onnx-online-websocket-server.exe', 'sherpa-onnx-online-websocket-server') } |
+        ForEach-Object { Remove-Item -Force $_.FullName; Write-Host "==> 已剔除 server exe: $($_.Name)" }
 } else {
-    Write-Warning "未找到 $sherpaLx。请在发布前放置 Linux 版 sherpa-onnx（server + models + hr），否则 ASR 不可用。"
+    Write-Warning "未找到 $sherpaLx。请在发布前放置 Linux 版 sherpa-onnx 原生库（libsherpa-onnx-c-api.so + libonnxruntime.so + hr/），否则 ASR 不可用。"
     New-Item -ItemType Directory -Force -Path (Join-Path $outDir 'sherpa-onnx') | Out-Null
 }
 
 # wwwroot 验证页已由 dotnet publish 自动包含。
-# 部署时请相应修改 appsettings.json 的 SherpaServer:ExePath 为 Linux 版可执行文件名。
+# 识别在网关进程内（P/Invoke）：目标机需有 Linux 版 .so（Windows 的 .dll 不可用），
+# 路径由 appsettings.json 的 SherpaServer:NativeDir 指定（默认 models/sherpa-onnx）。
 
 # 附带部署检查脚本与多表自测脚本（目标机需 pwsh 运行；临时拉起验证，关掉脚本即停）
 Copy-Item -Force (Join-Path $project 'deploy-check.ps1') (Join-Path $outDir 'deploy-check.ps1')

@@ -63,14 +63,10 @@ function Frontend-Call {
 function Get-Health { Invoke-RestMethod -Uri "$base/api/health" -TimeoutSec 5 }
 function Get-Tables { (Invoke-RestMethod -Uri "$base/tables" -TimeoutSec 5).tables }
 
-# sherpa ASR 运行时可用性：网关只做转发，真正的识别在 sherpa（6006）。
-# bin 目录直接跑服务时通常没有 sherpa-onnx/（publish.ps1 才拷入），ws/asr 两节只能 SKIP。
+# ASR 运行时可用性：sherpa-onnx 已改为网关**进程内**（P/Invoke，无 6006 端口、无子进程），
+# 直接看 /api/health 的 asrReady（识别器是否已常驻加载完成）；模型缺失时为 false。
 function Test-AsrReady {
-    $c = New-Object System.Net.Sockets.TcpClient
-    try {
-        $ar = $c.BeginConnect('127.0.0.1', 6006, $null, $null)
-        return ($ar.AsyncWaitHandle.WaitOne(800) -and $c.Connected)
-    } catch { return $false } finally { $c.Close() }
+    try { return [bool](Get-Health).asrReady } catch { return $false }
 }
 
 # WS 收一帧（文本返回内容；CLOSE/TIMEOUT/ERROR 返回标记）
@@ -143,7 +139,7 @@ if ($doWs) {
     try {
         # sherpa 未就绪（bin 目录跑服务常见）时只能跳过：网关无 ASR 后端，ready 帧发不出来
         if (-not (Test-AsrReady)) {
-            Skip "WS ready 延迟" "ASR 运行时未就绪（6006 无监听：bin 目录跑服务需 publish.ps1 拷入 sherpa-onnx，或先启动外部 sherpa）"
+            Skip "WS ready 延迟" "ASR 运行时未就绪（/api/health 的 asrReady=false：模型/原生库缺失或加载失败）"
         } else {
             # 选一个"非当前活动表"的已导入表：优先 http 节导入的 力学性能，其次任意非活动表
             $active = (Get-Health).activeTable
@@ -198,7 +194,7 @@ if ($doAsr) {
     try {
         # sherpa 未就绪（bin 目录跑服务常见）时只能跳过：网关无 ASR 后端，识别不出文本
         if (-not (Test-AsrReady)) {
-            Skip "ASR 端到端" "ASR 运行时未就绪（6006 无监听：bin 目录跑服务需 publish.ps1 拷入 sherpa-onnx，或先启动外部 sherpa）"
+            Skip "ASR 端到端" "ASR 运行时未就绪（/api/health 的 asrReady=false：模型/原生库缺失或加载失败）"
         } elseif (-not (@(Get-Tables) | Where-Object { $_.name -eq $AsrTable })) {
             Skip "ASR 端到端" "table [$AsrTable] 未导入（先跑 http 节或改 -AsrTable）"
         } else {
