@@ -65,6 +65,15 @@ internal sealed class SherpaRecognizerHost : IHostedService, IDisposable
 
     public int SampleRate => _options.SampleRate;
 
+    private HotwordVocab? _vocab;
+
+    /// <summary>
+    /// 热词可用字表（模型 tokens.txt 的单字 token 集合）：构造按流传词串时用来整条剔除
+    /// 无法完整编码的短语（否则 sherpa 会把它截断成单字/伪词）。与识别器是否加载无关，按需加载并缓存。
+    /// </summary>
+    public HotwordVocab? HotwordVocab
+        => _vocab ??= HotwordVocab.Get(SherpaNativeOptions.ResolveAsset(_options.Tokens));
+
     /// <summary>按流传词（'/'）创建解码流；空串/空值 = 不带热词。</summary>
     public SherpaStream CreateStream(string? hotwords)
     {

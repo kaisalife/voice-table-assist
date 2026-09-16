@@ -52,6 +52,18 @@ if (Test-Path $gtcrn) {
     Write-Warning 'GTCRN 模型未随包：models/asr/gtcrn_simple.onnx（工厂噪声场景建议补上；缺失时启动自动降级关闭降噪）'
 }
 
+# 剔除"安卓化更新引入、C# 网关用不到"的模型文件（源码 models/ 不动，只清发布副本）：
+#   int8 模型（安卓端）、silero_vad.onnx（安卓端 VAD）、models/sherpa-onnx/hr（安卓字典/热词目录）
+foreach ($p in @(
+        (Join-Path $outDir 'models\asr\silero_vad.onnx'),
+        (Join-Path $outDir 'models\sherpa-onnx\hr')
+    )) {
+    if (Test-Path $p) { Remove-Item -Recurse -Force $p; Write-Host "==> 已剔除安卓化模型文件（不让入包）: $($p.Replace($outDir + '\', ''))" }
+}
+Get-ChildItem (Join-Path $outDir 'models\asr') -Directory -ErrorAction SilentlyContinue |
+    Where-Object { $_.Name -like '*int8*' } |
+    ForEach-Object { Remove-Item -Recurse -Force $_.FullName; Write-Host "==> 已剔除安卓 int8 模型目录: $($_.Name)" }
+
 Write-Host "==> 拷贝 Linux sherpa-onnx（来自 sherpa-linux/）"
 if (Test-Path $sherpaLx) {
     New-Item -ItemType Directory -Force -Path (Join-Path $outDir 'sherpa-onnx') | Out-Null
@@ -72,24 +84,18 @@ if (Test-Path $sherpaLx) {
 # 附带部署检查脚本与多表自测脚本（目标机需 pwsh 运行；临时拉起验证，关掉脚本即停）
 Copy-Item -Force (Join-Path $project 'deploy-check.ps1') (Join-Path $outDir 'deploy-check.ps1')
 Copy-Item -Recurse -Force (Join-Path $project 'selftest') (Join-Path $outDir 'selftest')
-# HTTPS 证书生成脚本（PowerShell，跨平台 pwsh 可执行）：目标机若无 certs\gateway.pfx 必带
-if (Test-Path (Join-Path $project 'make-cert.ps1')) {
-    Copy-Item -Force (Join-Path $project 'make-cert.ps1') (Join-Path $outDir 'make-cert.ps1')
-}
+# 证书相关（make-cert.*、certs/）不入包：平板走 Cordova 壳内的 http://localhost 安全上下文，无需 HTTPS 证书。
 
-# 附带安卓 Cordova 壳模板（config.xml + package.json + build.ps1 + 已同步的 www/）
+# 附带安卓 Cordova 壳模板（只带壳源；不含 platforms/node_modules 构建产物）
 if (Test-Path (Join-Path $project 'cordova')) {
-    Copy-Item -Recurse -Force (Join-Path $project 'cordova') (Join-Path $outDir 'cordova')
-}
-
-# 附带 HTTPS 证书（可选）：存在即启用平板浏览器直访的 https://15433。
-# make-cert.bat 生成 certs/{ca.crt,gateway.pfx}；私钥不进 git，打包机生成后随包分发。
-$certsSrc = Join-Path $project 'certs'
-if (Test-Path (Join-Path $certsSrc 'gateway.pfx')) {
-    Copy-Item -Recurse -Force $certsSrc (Join-Path $outDir 'certs')
-    Write-Host '==> 已附带 certs/（HTTPS 平板直访已启用）'
-} else {
-    Write-Warning '未找到 certs\gateway.pfx - HTTPS 已禁用。平板浏览器直访需先运行 make-cert.bat。'
+    $cordovaDst = Join-Path $outDir 'cordova'
+    if (Test-Path $cordovaDst) { Remove-Item -Recurse -Force $cordovaDst }
+    New-Item -ItemType Directory -Force -Path $cordovaDst | Out-Null
+    foreach ($item in 'config.xml', 'package.json', 'package-lock.json', 'build.ps1', 'www', 'hooks', 'plugins') {
+        $src = Join-Path $project ('cordova\' + $item)
+        if (Test-Path $src) { Copy-Item -Recurse -Force $src (Join-Path $cordovaDst $item) }
+    }
+    Write-Host '==> 已附带 cordova 壳模板（不含 platforms/node_modules）'
 }
 
 # 附带文档：目标机部署运维直接看包内部署文档，无需回仓库翻

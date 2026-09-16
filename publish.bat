@@ -143,12 +143,8 @@ if defined SHERPA_OUT (
     echo         OR %PROJECT%models\sherpa-onnx\ then re-run publish.bat.
 )
 
-REM ===== 4) deploy-check.bat + selftest/ + install.bat + make-cert ======
-echo ==^> Copy deploy-check.bat + install.bat + make-cert + selftest/ ...
 copy /Y "%PROJECT%deploy-check.bat" "%PUBLISH%deploy-check.bat" >NUL
 if exist "%PROJECT%install.bat" copy /Y "%PROJECT%install.bat" "%PUBLISH%install.bat" >NUL
-if exist "%PROJECT%make-cert.bat" copy /Y "%PROJECT%make-cert.bat" "%PUBLISH%make-cert.bat" >NUL
-if exist "%PROJECT%make-cert.ps1" copy /Y "%PROJECT%make-cert.ps1" "%PUBLISH%make-cert.ps1" >NUL
 if exist "%PROJECT%selftest" (
     xcopy "%PROJECT%selftest" "%PUBLISH%selftest\" /E /I /H /Y /Q
     REM Remove any legacy ps1 scripts inside selftest dir.
@@ -173,12 +169,6 @@ if exist "%PROJECT%cordova" (
     REM Inside Cordova template, keep any scripts for now - separate build.
 )
 
-REM ===== 6b) HTTPS certs (optional - enables tablet access on port 15433) =====
-if exist "%PROJECT%certs\gateway.pfx" (
-    echo ==^> Copy certs/ - HTTPS enabled for tablets.
-    xcopy "%PROJECT%certs" "%PUBLISH%certs\" /E /I /H /Y /Q
-) else (
-    echo WARN    certs\gateway.pfx missing - HTTPS disabled. Run make-cert.bat first.
 )
 
 REM ===== 7) Docs =====

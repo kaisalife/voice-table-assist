@@ -62,4 +62,48 @@ public class TableVoiceResourceGeneratorTests
         TableVoiceResourceGenerator.ToChineseNum(11).Should().Be("十一");
         TableVoiceResourceGenerator.ToChineseNum(24).Should().Be("二十四");
     }
+
+    [Fact]
+    public void PhraseWithoutFullEncoding_IsSkippedEntirely_NotTruncated()
+    {
+        // 模拟真实模型：有 硬/度/号/一…，没有 径/洁
+        var tokensPath = Path.Combine(Path.GetTempPath(), $"vta-tokens-{Guid.NewGuid():N}.txt");
+        File.WriteAllText(tokensPath, "硬 0\n度 1\n号 2\n一 3\n外 4\n光 5\n测 6\n量 7\n值 8\n序 9\n第 10\n个 11\n列 12\n零 13\n二 14\n三 15\n四 16\n五 17\n六 18\n七 19\n八 20\n九 21\n点 22\n");
+        try
+        {
+            var vocab = HotwordVocab.Get(tokensPath);
+            var (text, skipped) = TableVoiceResourceGenerator.BuildHotWordsReport(["外径", "内径", "光洁度", "硬度"], 1, vocab);
+
+            skipped.Should().BeEquivalentTo(["外径", "内径", "光洁度"]);
+            text.Should().Contain("硬 度");
+            text.Should().Contain("一 号");
+            // 绝不能出现截断产物（单字「外」/伪词「光 度」）
+            text.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Should().NotContain(["外", "光", "光 度", "内"]);
+        }
+        finally { File.Delete(tokensPath); }
+    }
+
+    [Fact]
+    public void StreamReport_ReportsSkippedPhrases()
+    {
+        var tokensPath = Path.Combine(Path.GetTempPath(), $"vta-tokens-{Guid.NewGuid():N}.txt");
+        File.WriteAllText(tokensPath, "硬 0\n度 1\n号 2\n一 3\n");
+        try
+        {
+            var (stream, skipped) = TableVoiceResourceGenerator.BuildHotWordsStreamReport(["硬度", "外径"], 1, HotwordVocab.Get(tokensPath));
+            skipped.Should().Contain("外径");
+            stream.Should().Contain("硬 度");
+            stream.Should().NotContain("外");
+        }
+        finally { File.Delete(tokensPath); }
+    }
+
+    [Fact]
+    public void WithoutVocab_NoFiltering_LegacyBehaviour()
+    {
+        var text = TableVoiceResourceGenerator.BuildHotWords(["外径", "硬度"], 0, null);
+        text.Should().Contain("外 径");
+        text.Should().Contain("硬 度");
+    }
 }

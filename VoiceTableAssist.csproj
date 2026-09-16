@@ -44,6 +44,25 @@
     <None Include="models\**">
       <CopyToOutputDirectory>Never</CopyToOutputDirectory>
     </None>
+    <!-- 涉密前端 front/** 绝不入发布包（Web SDK 默认把 **/*.json 当 Content，会漏带 front/config.json 等） -->
+    <Content Remove="front\**" />
+    <None Remove="front\**" />
+    <!-- 本机发布产物/运行期数据同样不入包（publish-linux 里含 models 与旧 publish 副本，曾随包外泄） -->
+    <Content Remove="publish\**" />
+    <None Remove="publish\**" />
+    <Content Remove="publish-linux\**" />
+    <None Remove="publish-linux\**" />
+    <Content Remove="backup\**" />
+    <None Remove="backup\**" />
+    <!-- 证书不入包：平板走 Cordova 壳内 http://localhost 安全上下文，不需要 HTTPS 证书 -->
+    <Content Remove="wwwroot\ca.crt" />
+    <Content Remove="xj-apk\**" />
+    <None Remove="xj-apk\**" />
+    <Content Remove="logs\**" />
+    <None Remove="logs\**" />
+    <!-- global.json 只用于构建期锁 SDK 版本，不需要随包分发 -->
+    <Content Remove="global.json" />
+    <None Remove="global.json" />
     <!-- sherpa-onnx/** 原生可执行 + ASR 模型 + hr 语音资源，由 publish.ps1 随发布目录拷贝，禁止编译期拷入 -->
     <Content Remove="sherpa-onnx\**" />
     <None Include="sherpa-onnx\**">

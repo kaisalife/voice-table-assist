@@ -197,14 +197,21 @@ app.Map("/api/speech/asr/stream", async (HttpContext context) =>
                 tableKey, aligner.Vocabulary.Count, aligner.Threshold);
         }
         // 本表热词串（'/' 分隔）随流传入进程内识别器：识别器常驻，导入/切表后新连接立即生效。
+        // 无法完整编码的短语（含 tokens.txt 外的字，如 外径/内径/光洁度）整条不加载为热词——
+        // sherpa 会把这类短语截断成单字/伪词去 boost 解码，比没有更糟；这些行名由读音吸附兜底。
+        var engine = context.RequestServices.GetRequiredService<SherpaRecognizerHost>();
         var hotwords = index is { Rows.Length: > 0 }
-            ? TableVoiceResourceGenerator.BuildHotWordsStream(index.Rows, index.ColsCount)
-            : null;
+            ? TableVoiceResourceGenerator.BuildHotWordsStreamReport(index.Rows, index.ColsCount, engine.HotwordVocab)
+            : default;
+        if (hotwords.Skipped is { Count: > 0 })
+        {
+            logger.LogInformation("[HOTWORD] 本表未加载为热词 {Count} 条（含词表外字，交由读音吸附兜底）：{Skipped}",
+                hotwords.Skipped.Count, string.Join('/', hotwords.Skipped));
+        }
 
         var sessionFactory = ConnectionSender.CreateFactory(configuration, context.RequestServices, logger, tableKey, aligner);
-        var engine = context.RequestServices.GetRequiredService<SherpaRecognizerHost>();
         var denoiser = context.RequestServices.GetService<GtcrnDenoiser>();   // 默认 NULL（未启用降噪）；启用时已注册单例
-        await SherpaAsrBridge.RunAsync(context, engine, hotwords, aligner, context.RequestAborted, sessionCts.Token, denoiser, sessionFactory);
+        await SherpaAsrBridge.RunAsync(context, engine, hotwords.Stream, aligner, context.RequestAborted, sessionCts.Token, denoiser, sessionFactory);
     }
     finally
     {

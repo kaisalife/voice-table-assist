@@ -1,4 +1,4 @@
-﻿# 打包发布：self-contained win-x64 + 模型/sherpa hr/wwwroot，打一个 zip。
+# 打包发布：self-contained win-x64 + 模型/sherpa hr/wwwroot，打一个 zip。
 # ASR 模型仅保留 float32 版（识别精度更高）。int8 已从 models/asr 移除。
 # 用法（在 app/VoiceTableAssist 目录）：
 #   powershell -ExecutionPolicy Bypass -File .\publish.ps1
@@ -68,25 +68,39 @@ if (-not (Test-Path (Join-Path $hrCurrent 'hotwords.txt'))) {
     Write-Host '==> 已预置空热词文件 sherpa-onnx/hr/tables/current/hotwords.txt（仅供查看）'
 }
 
-# ASR 模型仅 float32（int8 已移除）。
+# 剔除"安卓化更新引入、C# 网关用不到"的模型文件（源码 models/ 不动，只清发布副本）：
+#   - sherpa-onnx-streaming-zipformer-zh-int8-*：安卓端用的 int8 模型（C# 用 float32 版，精度更高）
+#   - silero_vad.onnx：安卓端 VAD（C# 用 sherpa 端点检测，不读它）
+#   - models/sherpa-onnx/hr/**：安卓端生成的拼音字典 + 热词目录（字典已随代码走 assets/hr_char_pinyin.txt，
+#     热词按表随流传入；运行期只需 exe 目录下的 sherpa-onnx/hr/tables 占位）
+$androidOnly = @(
+    (Join-Path $publish 'models\asr\sherpa-onnx-streaming-zipformer-zh-int8-2025-06-30'),
+    (Join-Path $publish 'models\asr\silero_vad.onnx'),
+    (Join-Path $publish 'models\sherpa-onnx\hr')
+)
+foreach ($p in $androidOnly) {
+    if (Test-Path $p) { Remove-Item -Recurse -Force $p; Write-Host "==> 已剔除安卓化模型文件（不让入包）: $($p.Replace($publish + '\', ''))" }
+}
+Get-ChildItem (Join-Path $publish 'models\asr') -Directory -ErrorAction SilentlyContinue |
+    Where-Object { $_.Name -like '*int8*' } |
+    ForEach-Object { Remove-Item -Recurse -Force $_.FullName; Write-Host "==> 已剔除安卓 int8 模型目录: $($_.Name)" }
 
-# wwwroot 验证页已由 dotnet publish 自动包含（Web SDK 默认 Content）。
 # 附带部署检查脚本与多表自测脚本（临时拉起验证，关掉脚本即停）。
+# install.bat 里 `call "%~dp0deploy-check.bat" /SELFTEST` 是随包一键入口，必须两个都在（只带 .ps1 会导致入口 404）。
 Copy-Item -Force (Join-Path $project 'deploy-check.ps1') (Join-Path $publish 'deploy-check.ps1')
+if (Test-Path (Join-Path $project 'deploy-check.bat')) {
+    Copy-Item -Force (Join-Path $project 'deploy-check.bat') (Join-Path $publish 'deploy-check.bat')
+} else {
+    Write-Warning '未找到 deploy-check.bat —— install.bat 的一键入口会找不到它'
+}
 Copy-Item -Recurse -Force (Join-Path $project 'selftest') (Join-Path $publish 'selftest')
 # 一键部署入口：双击即跑 deploy-check.ps1 -Selftest（含 VC++ 运行时缺失检测与静默安装）
 if (Test-Path (Join-Path $project 'install.bat')) {
     Copy-Item -Force (Join-Path $project 'install.bat') (Join-Path $publish 'install.bat')
 }
-# HTTPS 证书生成脚本：install.bat 在 certs\gateway.pfx 或 wwwroot\ca.crt 缺失时自动调它，
-# 目标机若无这两个文件、又不带 make-cert，则 HTTPS 自愈会失败。所以必须随包带。
-if (Test-Path (Join-Path $project 'make-cert.bat')) {
-    Copy-Item -Force (Join-Path $project 'make-cert.bat') (Join-Path $publish 'make-cert.bat')
-}
-if (Test-Path (Join-Path $project 'make-cert.ps1')) {
-    Copy-Item -Force (Join-Path $project 'make-cert.ps1') (Join-Path $publish 'make-cert.ps1')
-}
-# VC++ Redistributable x64：目标机缺它时 sherpa-onnx exe 会启动失败（0xC0000135 或缺 VCRUNTIME140.dll）。
+# 证书相关（make-cert.*、certs/）**不入包**：平板现在走 Cordova 壳内的 http://localhost 安全上下文，
+# 不再需要 HTTPS 证书；如现场确需浏览器直访 https://<网关IP>:15433，再自行在包外放 certs/gateway.pfx。
+# VC++ Redistributable x64：目标机缺它时 sherpa 原生库加载失败（缺 VCRUNTIME140.dll）。
 # 随包带安装包，deploy-check.ps1 检测到缺失时静默安装（/install /quiet /norestart），无需联网。
 $vcRedist = Join-Path $project 'vc_redist.x64.exe'
 if (Test-Path $vcRedist) {
@@ -96,19 +110,19 @@ if (Test-Path $vcRedist) {
     Write-Warning '未找到 vc_redist.x64.exe（目标机若缺 VC++ 运行时 sherpa exe 将启动失败）'
 }
 
-# 附带安卓 Cordova 壳模板（config.xml + package.json + build.ps1 + 已同步的 www/）
-if (Test-Path (Join-Path $project 'cordova')) {
-    Copy-Item -Recurse -Force (Join-Path $project 'cordova') (Join-Path $publish 'cordova')
-}
-
-# 附带 HTTPS 证书（可选）：存在即启用平板浏览器直访的 https://15433。
-# make-cert.bat 生成 certs/{ca.crt,gateway.pfx}；私钥不进 git，打包机生成后随包分发。
-$certsSrc = Join-Path $project 'certs'
-if (Test-Path (Join-Path $certsSrc 'gateway.pfx')) {
-    Copy-Item -Recurse -Force $certsSrc (Join-Path $publish 'certs')
-    Write-Host '==> 已附带 certs/（HTTPS 平板直访已启用）'
-} else {
-    Write-Warning '未找到 certs\gateway.pfx - HTTPS 已禁用。平板浏览器直访需先运行 make-cert.bat。'
+# 附带安卓 Cordova 壳模板（只带壳源：config.xml + package.json + build.ps1 + 已同步的 www/）
+# 注意：绝不能整目录递归拷 cordova/ —— 里面 platforms/（gradle 构建缓存，几十万小文件 + 超长路径）
+# 会把发布包撑爆并触发 Windows 路径长度限制；node_modules/ 同理。
+$cordovaSrc = Join-Path $project 'cordova'
+if (Test-Path $cordovaSrc) {
+    $cordovaDst = Join-Path $publish 'cordova'
+    if (Test-Path $cordovaDst) { Remove-Item -Recurse -Force $cordovaDst }
+    New-Item -ItemType Directory -Force -Path $cordovaDst | Out-Null
+    foreach ($item in 'config.xml', 'package.json', 'package-lock.json', 'build.ps1', 'www', 'hooks', 'plugins') {
+        $src = Join-Path $cordovaSrc $item
+        if (Test-Path $src) { Copy-Item -Recurse -Force $src (Join-Path $cordovaDst $item) }
+    }
+    Write-Host '==> 已附带 cordova 壳模板（config.xml/package.json/build.ps1/www，不含 platforms/node_modules）'
 }
 
 # 附带文档：目标机部署运维直接看包内部署文档，无需回仓库翻
@@ -124,5 +138,42 @@ Write-Host '==> 压缩 zip'
 New-Item -ItemType Directory -Force -Path $zipDir | Out-Null
 Compress-Archive -Path (Join-Path $publish '*') -DestinationPath $zipOut -Force
 
+# ---- 交付前完整性自检：少文件/多安卓文件都当场 FAIL，避免带着问题发到现场 ----
+Write-Host '==> 发布包完整性自检'
+$required = @(
+    'VoiceTableAssist.exe', 'VoiceTableAssist.dll', 'appsettings.json', 'web.config',
+    'assets\hr_char_pinyin.txt',                                   # 读音吸附字典（随代码发布）
+    'wwwroot\index.html', 'wwwroot\voice-mic.js', 'wwwroot\audio-capture-worklet.js',
+    'models\asr\sherpa-onnx-streaming-zipformer-zh-2025-06-30\encoder.onnx',
+    'models\asr\sherpa-onnx-streaming-zipformer-zh-2025-06-30\decoder.onnx',
+    'models\asr\sherpa-onnx-streaming-zipformer-zh-2025-06-30\joiner.onnx',
+    'models\asr\sherpa-onnx-streaming-zipformer-zh-2025-06-30\tokens.txt',
+    'models\raner\model.onnx',
+    'models\embedding\model_quantized.onnx',
+    'models\sherpa-onnx\sherpa-onnx-c-api.dll',                    # 进程内识别（P/Invoke）
+    'models\sherpa-onnx\onnxruntime.dll',
+    'selftest\selftest.ps1', 'deploy-check.ps1', 'deploy-check.bat', 'install.bat',
+    '相关文档\部署文档.md', '相关文档\用户使用指南.md', '相关文档\api文档.md'
+)
+$missing = @()
+foreach ($rel in $required) { if (-not (Test-Path (Join-Path $publish $rel))) { $missing += $rel } }
+if ($missing.Count -gt 0) {
+    Write-Host 'FAIL  发布包缺少以下文件：'
+    $missing | ForEach-Object { Write-Host "        $_" }
+    throw "发布包不完整（缺 $($missing.Count) 项），已中止"
+}
+
+# 安卓化更新引入的文件不得入包（models 里只允许 C# 运行期需要的资产）
+$forbidden = @(
+    'models\asr\silero_vad.onnx',
+    'models\sherpa-onnx\hr\hr_char_pinyin.txt'
+)
+foreach ($rel in $forbidden) { if (Test-Path (Join-Path $publish $rel)) { throw "安卓化模型文件混入发布包：$rel" } }
+if (Get-ChildItem (Join-Path $publish 'models\asr') -Directory -ErrorAction SilentlyContinue | Where-Object { $_.Name -like '*int8*' }) {
+    throw '安卓 int8 模型目录混入发布包：models\asr\*int8*'
+}
+Write-Host "OK    完整性自检通过（必需 $($required.Count) 项齐全；无安卓化模型文件）"
+
 Write-Host "==> 完成: $zipOut"
-Write-Host "解压后目录布局：VoiceTableAssist.exe + models/{raner,embedding,asr} + sherpa-onnx/{exe,hr} + wwwroot/ + appsettings.json"
+Write-Host "解压后目录布局：VoiceTableAssist.exe + models/{raner,embedding,asr(float32)} + sherpa-onnx/{c-api.dll,onnxruntime.dll} + assets/拼音字典 + wwwroot/ + appsettings.json"
+

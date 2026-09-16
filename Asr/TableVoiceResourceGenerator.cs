@@ -64,15 +64,25 @@ internal static class TableVoiceResourceGenerator
     /// 生成热词文本。rows 为行标签（检验内容）；columnCount 为列数。
     /// sherpa 热词按"字级 token"解析：每个汉字之间必须用空格分隔（如「一 号」），整行连写映射不到 token。
     /// 模型词表无 ASCII 数字，识别也不可能输出「1号」——含非汉字字符的短语直接跳过。
+    /// <paramref name="vocab"/> 非空时，**无法完整编码的短语整条不加载**（否则 sherpa 会把它截断成
+    /// 单字/伪词去 boost 解码，见 <see cref="HotwordVocab"/>）；这类行名由表内读音吸附兜底。
     /// 无论何种表，都会固定加入 X号/第X个/第X列 等列描述符短语与单字数字（不含"十"，见 HotwordDigits）。
     /// </summary>
-    public static string BuildHotWords(IReadOnlyList<string> rows, int columnCount)
+    public static (string Text, IReadOnlyList<string> Skipped) BuildHotWordsReport(
+        IReadOnlyList<string> rows, int columnCount, HotwordVocab? vocab = null)
     {
         var sb = new StringBuilder();
+        var skipped = new List<string>();
+
         void AppendPhrase(string phrase)
         {
-            // 热词行：字级 token 空格分隔；词表只有汉字，含非汉字（ASCII 数字/字母）的短语模型输出不了，跳过
             if (phrase.Length == 0 || phrase.Any(c => c is not (>= '\u4E00' and <= '\u9FFF'))) return;
+            // 不能完整编码 → 整条不加载为热词（不截断、不转码；由读音吸附兜底）
+            if (vocab is not null && !vocab.CanEncode(phrase))
+            {
+                skipped.Add(phrase);
+                return;
+            }
             sb.AppendLine(string.Join(' ', phrase.ToCharArray()));
         }
 
@@ -85,8 +95,12 @@ internal static class TableVoiceResourceGenerator
         // 单字数字 / 小数点加权，对抗同音（如 五→武）；"十"刻意不加权（见 HotwordDigits）
         foreach (var ch in HotwordDigits) sb.AppendLine(ch);
         sb.AppendLine("点");
-        return sb.ToString();
+        return (sb.ToString(), skipped);
     }
+
+    /// <summary>生成热词文本（见 <see cref="BuildHotWordsReport"/>）。</summary>
+    public static string BuildHotWords(IReadOnlyList<string> rows, int columnCount, HotwordVocab? vocab = null)
+        => BuildHotWordsReport(rows, columnCount, vocab).Text;
 
     /// <summary>把生成的热词写到磁盘（按表目录隔离）。仅供运维/排障查看——
     /// 运行时热词按流经 <see cref="BuildHotWordsStream"/> 直传 sherpa，不再从文件加载。</summary>
@@ -101,12 +115,17 @@ internal static class TableVoiceResourceGenerator
     /// 只是把多行用 '/' 连成一条串（sherpa <c>CreateStream(hotwords)</c> 的格式），
     /// 供每通语音会话绑定"本表词表"——识别器常驻，切表/导入都不重建、不重启。
     /// </summary>
-    public static string BuildHotWordsStream(IReadOnlyList<string> rows, int columnCount)
+    public static (string Stream, IReadOnlyList<string> Skipped) BuildHotWordsStreamReport(
+        IReadOnlyList<string> rows, int columnCount, HotwordVocab? vocab = null)
     {
-        var text = BuildHotWords(rows, columnCount);
+        var (text, skipped) = BuildHotWordsReport(rows, columnCount, vocab);
         var parts = text.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-        return string.Join('/', parts);
+        return (string.Join('/', parts), skipped);
     }
+
+    /// <summary>生成按流传词串（见 <see cref="BuildHotWordsStreamReport"/>）。</summary>
+    public static string BuildHotWordsStream(IReadOnlyList<string> rows, int columnCount, HotwordVocab? vocab = null)
+        => BuildHotWordsStreamReport(rows, columnCount, vocab).Stream;
 
     /// <summary>
     /// 依据配置重建语音资源（hotwords.txt，仅供运维查看）到指定表目录（tables/{key}，default→current 兼容）。
@@ -133,7 +152,14 @@ internal static class TableVoiceResourceGenerator
 
         try
         {
-            WriteHotWords(BuildHotWords(rows, columnCount), tableDir);
+            // 落盘内容与实际按流传入保持一致：同样按 tokens.txt 过滤"无法完整编码"的短语
+            var tokensPath = SherpaNativeOptions.ResolveAsset(
+                configuration["SherpaServer:Tokens"] is { Length: > 0 } t ? t : "models/asr/sherpa-onnx-streaming-zipformer-zh-2025-06-30/tokens.txt");
+            var vocab = HotwordVocab.Get(tokensPath);
+            var (text, skipped) = BuildHotWordsReport(rows, columnCount, vocab);
+            WriteHotWords(text, tableDir);
+            if (skipped.Count > 0)
+                Console.WriteLine($"[HOTWORD] 未加载为热词（含词表外字，交由读音吸附兜底）: {string.Join('/', skipped)}");
             return (true, null, tableDir);
         }
         catch (Exception ex)

@@ -37,6 +37,9 @@ wwwroot/ca.crt
 # 涉密前端（APICloud/Cordova 主应用源码，含现场业务页面）：仅本地保留，禁止入库/推送
 front/
 
+# APK 联调壳工程（xj-apk/）：内含 front/ 涉密副本 + Cordova 构建缓存（体积大），禁止入库
+xj-apk/
+
 # 日志
 *.log
 
